@@ -1,0 +1,27 @@
+# Python
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Training data (large files)
+examples/fast_neural_style/data/
+*.zip
+
+# Model checkpoints (large files)
+examples/fast_neural_style/models/checkpoints/
+examples/fast_neural_style/saved_models/
+
+# Training logs
+*.log
+
+# macOS
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
