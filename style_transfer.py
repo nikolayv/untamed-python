@@ -11,12 +11,19 @@ MODELS = {
     '1': ('mosaic.pth', 'Mosaic'),
     '2': ('candy.pth', 'Candy'),
     '3': ('rain_princess.pth', 'Rain Princess'),
-    '4': ('udnie.pth', 'Udnie')
+    '4': ('udnie.pth', 'Udnie'),
+    '5': ('epoch_2_2025-10-15_19-13-34_100000.0_10000000000.0.model', 'Custom Pattern')
 }
 
 def load_model(model_file):
     model = TransformerNet()
-    state_dict = torch.load(f"examples/fast_neural_style/saved_models/{model_file}", map_location=device, weights_only=True)
+    # Check if it's a custom trained model or pre-trained model
+    if model_file.endswith('.model'):
+        model_path = f"examples/fast_neural_style/models/{model_file}"
+    else:
+        model_path = f"examples/fast_neural_style/saved_models/{model_file}"
+
+    state_dict = torch.load(model_path, map_location=device, weights_only=True)
     # Remove running_mean and running_var from old InstanceNorm2d layers
     state_dict = {k: v for k, v in state_dict.items() if not ('running_mean' in k or 'running_var' in k)}
     model.load_state_dict(state_dict, strict=False)
@@ -55,6 +62,7 @@ print("  1 - Mosaic style")
 print("  2 - Candy style")
 print("  3 - Rain Princess style")
 print("  4 - Udnie style")
+print("  5 - Custom Pattern style (your trained model!)")
 print("  q - Quit")
 print(f"\nCurrent style: {MODELS[current_model_key][1]}")
 
