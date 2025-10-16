@@ -1,0 +1,12 @@
+# Core dependencies for neural style transfer
+torch>=2.5.0
+torchvision>=0.20.0
+numpy>=1.26.0
+opencv-python>=4.12.0
+Pillow>=11.0.0
+
+# Optional: Person segmentation/isolation
+mediapipe>=0.10.0
+
+# Training and utilities
+matplotlib>=3.10.0
