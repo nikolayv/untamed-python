@@ -10,3 +10,6 @@ mediapipe>=0.10.0
 
 # Training and utilities
 matplotlib>=3.10.0
+
+# WebSocket streaming to web clients
+websockets>=13.0

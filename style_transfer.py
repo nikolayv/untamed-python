@@ -1,9 +1,16 @@
-import cv2, torch, sys, time
+import cv2, torch, sys, time, base64, json, argparse, asyncio, threading
 import numpy as np
 from torchvision import transforms
 from PIL import Image
 sys.path.insert(0, 'examples/fast_neural_style')
 from neural_style.transformer_net import TransformerNet
+
+# Try to import websockets for streaming
+try:
+    import websockets
+    websockets_available = True
+except ImportError:
+    websockets_available = False
 
 device = "mps" if torch.backends.mps.is_available() else "cpu"
 
@@ -17,14 +24,41 @@ except ImportError:
     segmentation_available = False
     print("MediaPipe not available - install with: pip install mediapipe")
 
-# Check for video file argument
-VIDEO_FILE = None
+# Parse command line arguments
+parser = argparse.ArgumentParser(description='Neural Style Transfer with optional WebSocket streaming')
+parser.add_argument('video', nargs='?', default=None, help='Video file path (default: use camera)')
+parser.add_argument('--ws-host', default='localhost', help='WebSocket server host (default: localhost)')
+parser.add_argument('--ws-port', type=int, default=8765, help='WebSocket server port (default: 8765)')
+parser.add_argument('--ws-enable', action='store_true', help='Enable WebSocket streaming')
+parser.add_argument('--ws-fps', type=int, default=10, help='WebSocket streaming FPS (default: 10)')
+parser.add_argument('--ws-quality', type=int, default=80, help='JPEG quality for WebSocket streaming (default: 80)')
+args = parser.parse_args()
+
+VIDEO_FILE = args.video
 VIDEO_FPS = 2  # Initial playback fps for video mode
-if len(sys.argv) > 1:
-    VIDEO_FILE = sys.argv[1]
+if VIDEO_FILE:
     print(f"Video playback mode: {VIDEO_FILE}")
 else:
     print("Camera mode (use: python style_transfer.py <video_file> for video playback)")
+
+# WebSocket streaming configuration
+WS_ENABLED = args.ws_enable and websockets_available
+WS_HOST = args.ws_host
+WS_PORT = args.ws_port
+WS_FPS = args.ws_fps
+WS_QUALITY = args.ws_quality
+WS_FRAME_DELAY = 1.0 / WS_FPS
+
+if WS_ENABLED:
+    print(f"WebSocket streaming enabled on ws://{WS_HOST}:{WS_PORT} at {WS_FPS} fps")
+elif args.ws_enable and not websockets_available:
+    print("WARNING: WebSocket streaming requested but 'websockets' package not installed")
+    print("Install with: pip install websockets")
+
+# WebSocket streaming state (initialize early before use)
+ws_connected_clients = set()
+ws_last_broadcast_time = 0
+ws_broadcast_counter = 0
 
 # Available style models (model_file, display_name, style_image_path)
 BASE_MODELS = {
@@ -341,6 +375,11 @@ if segmentation_available:
 if VIDEO_FILE:
     print("\nVideo Playback:")
     print("  r/f: Decrease/increase playback FPS")
+if WS_ENABLED:
+    print(f"\nWebSocket Streaming:")
+    print(f"  Server: ws://{WS_HOST}:{WS_PORT}")
+    print(f"  Rate: {WS_FPS} fps, Quality: {WS_QUALITY}")
+    print(f"  Clients: {len(ws_connected_clients)}")
 print("\n  m: Cycle blend modes (single→dual→triple)")
 print("  q: Quit")
 print(f"\nCurrent: {BASE_MODELS[current_model_key][1]}")
@@ -351,6 +390,81 @@ selecting_c = False
 
 frame_idx = 0
 last_styled_frame = None
+
+async def ws_client_handler(websocket):
+    """Handle WebSocket client connections."""
+    client_id = id(websocket)
+    ws_connected_clients.add(websocket)
+    print(f"\nWebSocket client connected: {client_id} (total: {len(ws_connected_clients)})")
+
+    try:
+        # Send connection info
+        await websocket.send(json.dumps({
+            'type': 'connected',
+            'message': 'Connected to style transfer stream',
+            'fps': WS_FPS,
+            'resolution': {
+                'width': TARGET_WIDTH,
+                'height': TARGET_HEIGHT
+            }
+        }))
+
+        # Keep connection alive - wait for disconnect
+        await websocket.wait_closed()
+    except websockets.exceptions.ConnectionClosed:
+        pass
+    except Exception as e:
+        print(f"WebSocket error with client {client_id}: {e}")
+    finally:
+        ws_connected_clients.discard(websocket)
+        print(f"WebSocket client disconnected: {client_id} (total: {len(ws_connected_clients)})")
+
+async def ws_broadcast_frame(frame):
+    """Broadcast frame to all connected WebSocket clients."""
+    global ws_broadcast_counter
+
+    if not ws_connected_clients:
+        return
+
+    # Encode frame as JPEG
+    encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), WS_QUALITY]
+    _, buffer = cv2.imencode('.jpg', frame, encode_param)
+    jpg_as_text = base64.b64encode(buffer).decode('utf-8')
+
+    ws_broadcast_counter += 1
+
+    # Send to all clients
+    message = json.dumps({
+        'type': 'frame',
+        'data': jpg_as_text,
+        'timestamp': time.time(),
+        'frameNumber': ws_broadcast_counter
+    })
+
+    # Broadcast to all clients concurrently
+    if ws_connected_clients:
+        await asyncio.gather(
+            *[client.send(message) for client in ws_connected_clients],
+            return_exceptions=True
+        )
+
+def ws_start_server():
+    """Start WebSocket server in background thread."""
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+
+    async def serve():
+        async with websockets.serve(ws_client_handler, WS_HOST, WS_PORT):
+            print(f"WebSocket server running on ws://{WS_HOST}:{WS_PORT}")
+            await asyncio.Future()  # Run forever
+
+    loop.run_until_complete(serve())
+
+# Start WebSocket server in background thread if enabled
+if WS_ENABLED:
+    ws_thread = threading.Thread(target=ws_start_server, daemon=True)
+    ws_thread.start()
+    time.sleep(0.5)  # Give server time to start
 
 while True:
     # For video mode, skip ahead to the next frame we want to process
@@ -386,6 +500,14 @@ while True:
 
     # Apply pulse distortion if enabled
     styled = apply_pulse_distortion(styled)
+
+    # WebSocket streaming: broadcast frame at configured rate
+    if WS_ENABLED and ws_connected_clients:
+        current_time = time.time()
+        if current_time - ws_last_broadcast_time >= WS_FRAME_DELAY:
+            # Run async broadcast in the background
+            asyncio.run(ws_broadcast_frame(styled.copy()))
+            ws_last_broadcast_time = current_time
 
     # Display style preview(s) in corner
     h, w = styled.shape[:2]
@@ -428,6 +550,13 @@ while True:
                          (x_offset+preview_size+2, y_offset+preview_size+2), (255, 255, 255), 2)
             # Place preview
             styled[y_offset:y_offset+preview_size, x_offset:x_offset+preview_size] = preview
+
+    # Display WebSocket status indicator if enabled
+    if WS_ENABLED:
+        ws_status_text = f"WS: {len(ws_connected_clients)} clients"
+        ws_color = (100, 255, 100) if ws_connected_clients else (100, 100, 100)
+        cv2.putText(styled, ws_status_text, (w - 150, h - 20),
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.5, ws_color, 1)
 
     # Display current mode on frame
     y_pos = 30
