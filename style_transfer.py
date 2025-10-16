@@ -111,6 +111,7 @@ blend_weights = [0.33, 0.33, 0.34]  # [weight_a, weight_b, weight_c]
 # Visual effects state
 pulse_enabled = False
 person_isolation_enabled = False
+style_transfer_enabled = True  # Toggle to bypass style transfer
 
 # Initialize segmentation model if available
 segmentation_model = None
@@ -372,6 +373,8 @@ print("  </> (shift+,/.): Adjust wave amplitude")
 if segmentation_available:
     print("\nPerson Isolation:")
     print("  h: Toggle person isolation (style only people)")
+print("\nStyle Transfer:")
+print("  t: Toggle style transfer on/off (view raw/masked video)")
 if VIDEO_FILE:
     print("\nVideo Playback:")
     print("  r/f: Decrease/increase playback FPS")
@@ -491,9 +494,12 @@ while True:
     if person_isolation_enabled:
         frame = isolate_person(frame)
 
-    # Process the frame
-    styled = stylize_frame(frame)
-    last_styled_frame = styled
+    # Process the frame (or skip style transfer if disabled)
+    if style_transfer_enabled:
+        styled = stylize_frame(frame)
+        last_styled_frame = styled
+    else:
+        styled = frame  # Just use original/masked frame without styling
 
     # Advance frame index by skip amount for video, or by 1 for camera
     frame_idx += frame_skip
@@ -682,6 +688,9 @@ while True:
             person_isolation_enabled = not person_isolation_enabled
             last_styled_frame = None  # Invalidate cache
             print(f"Person isolation: {'ON' if person_isolation_enabled else 'OFF'}")
+    elif key == ord('t'):  # Toggle style transfer
+        style_transfer_enabled = not style_transfer_enabled
+        print(f"Style transfer: {'ON' if style_transfer_enabled else 'OFF'}")
     elif key == ord(' '):  # Spacebar - trigger wave
         if pulse_enabled:
             trigger_wave()
