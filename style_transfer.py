@@ -1,4 +1,5 @@
 import cv2, torch, sys, time
+import numpy as np
 from torchvision import transforms
 from PIL import Image
 sys.path.insert(0, 'examples/fast_neural_style')
@@ -24,6 +25,16 @@ blend_alpha = 0.5  # For 2-model blend: 0.0 = 100% model A, 1.0 = 100% model B
 
 # 3-model blend weights (barycentric coordinates - always sum to 1.0)
 blend_weights = [0.33, 0.33, 0.34]  # [weight_a, weight_b, weight_c]
+
+# Visual effects state
+pulse_enabled = False
+
+# Pulse distortion parameters - track multiple waves
+active_waves = []  # List of {birth_time: frame_count, amplitude: pixels}
+pulse_amplitude = 35  # max displacement in pixels
+pulse_speed = 50  # pixels per frame that wave expands
+pulse_width = 30  # width of each wave
+frame_count = 0
 
 def load_state_dict(model_file):
     """Load state dict from a model file."""
@@ -106,6 +117,74 @@ def update_model():
     else:
         model = load_model(BASE_MODELS[current_model_key][0])
 
+def trigger_wave():
+    """Trigger a new expanding wave."""
+    global active_waves, frame_count
+    active_waves.append({
+        'birth_time': frame_count,
+        'amplitude': pulse_amplitude
+    })
+    print(f"Wave triggered! Active waves: {len(active_waves)}")
+
+def apply_pulse_distortion(frame):
+    """Apply radial pulse distortion with multiple expanding waves."""
+    global frame_count, active_waves
+
+    if not pulse_enabled or len(active_waves) == 0:
+        return frame
+
+    h, w = frame.shape[:2]
+    center_x, center_y = w // 2, h // 2
+
+    # Create coordinate meshgrid
+    y, x = np.meshgrid(np.arange(h), np.arange(w), indexing='ij')
+
+    # Calculate distance from center for each pixel
+    dx = x - center_x
+    dy = y - center_y
+    distance = np.sqrt(dx**2 + dy**2)
+
+    # Accumulate displacement from all active waves
+    total_displacement = np.zeros_like(distance)
+
+    waves_to_remove = []
+    max_distance = np.sqrt(center_x**2 + center_y**2)
+
+    for i, wave in enumerate(active_waves):
+        age = frame_count - wave['birth_time']
+        wave_radius = age * pulse_speed
+
+        # Calculate how far each pixel is from the wave front
+        distance_from_wave = np.abs(distance - wave_radius)
+
+        # Wave has a certain width - only affect pixels near the wave front
+        wave_influence = np.exp(-distance_from_wave**2 / (pulse_width**2 / 2))
+
+        # Displacement magnitude (radial push/pull)
+        displacement = wave_influence * wave['amplitude']
+
+        total_displacement += displacement
+
+        # Remove waves that have traveled beyond the frame
+        if wave_radius > max_distance + pulse_width:
+            waves_to_remove.append(i)
+
+    # Remove expired waves
+    for i in reversed(waves_to_remove):
+        active_waves.pop(i)
+
+    # Apply displacement radially
+    angle = np.arctan2(dy, dx)
+    map_x = (x + total_displacement * np.cos(angle)).astype(np.float32)
+    map_y = (y + total_displacement * np.sin(angle)).astype(np.float32)
+
+    # Remap pixels according to distortion
+    distorted = cv2.remap(frame, map_x, map_y, cv2.INTER_LINEAR, borderMode=cv2.BORDER_REFLECT)
+
+    frame_count += 1
+
+    return distorted
+
 to_tensor = transforms.ToTensor()
 def stylize_frame(frame):
     img = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
@@ -143,6 +222,11 @@ print("  i/k: Increase/decrease A weight")
 print("  j/l: Increase/decrease B weight")
 print("  u/o: Increase/decrease C weight")
 print("  (Weights auto-normalize to 100%)")
+print("\nPulse Distortion:")
+print("  p: Toggle pulse effect on/off")
+print("  SPACE: Trigger wave (creates expanding distortion)")
+print("  ,/.: Adjust wave speed")
+print("  </> (shift+,/.): Adjust wave amplitude")
 print("\n  b: Cycle blend modes (single→dual→triple)")
 print("  q: Quit")
 print(f"\nCurrent: {BASE_MODELS[current_model_key][1]}")
@@ -158,6 +242,9 @@ while True:
         continue
 
     styled = stylize_frame(frame)
+
+    # Apply pulse distortion if enabled
+    styled = apply_pulse_distortion(styled)
 
     # Display current mode on frame
     y_pos = 30
@@ -272,6 +359,27 @@ while True:
             blend_alpha = min(1.0, blend_alpha + 0.1)
             print(f"Blend: {int((1-blend_alpha)*100)}% A / {int(blend_alpha*100)}% B")
             update_model()
+    # Pulse distortion controls
+    elif key == ord('p'):
+        pulse_enabled = not pulse_enabled
+        if not pulse_enabled:
+            active_waves.clear()
+        print(f"Pulse distortion: {'ON' if pulse_enabled else 'OFF'}")
+    elif key == ord(' '):  # Spacebar - trigger wave
+        if pulse_enabled:
+            trigger_wave()
+    elif key == ord(','):  # Decrease speed
+        pulse_speed = max(1, pulse_speed - 0.5)
+        print(f"Wave speed: {pulse_speed}px/frame")
+    elif key == ord('.'):  # Increase speed
+        pulse_speed = min(50, pulse_speed + 0.5)
+        print(f"Wave speed: {pulse_speed}px/frame")
+    elif key == ord('<'):  # Decrease amplitude
+        pulse_amplitude = max(5, pulse_amplitude - 2)
+        print(f"Wave amplitude: {pulse_amplitude}px")
+    elif key == ord('>'):  # Increase amplitude
+        pulse_amplitude = min(50, pulse_amplitude + 2)
+        print(f"Wave amplitude: {pulse_amplitude}px")
     elif chr(key) in BASE_MODELS:
         if selecting_a:
             model_a_key = chr(key)
