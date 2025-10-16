@@ -7,6 +7,15 @@ from neural_style.transformer_net import TransformerNet
 
 device = "mps" if torch.backends.mps.is_available() else "cpu"
 
+# Check for video file argument
+VIDEO_FILE = None
+VIDEO_FPS = 2  # Initial playback fps for video mode
+if len(sys.argv) > 1:
+    VIDEO_FILE = sys.argv[1]
+    print(f"Video playback mode: {VIDEO_FILE}")
+else:
+    print("Camera mode (use: python style_transfer.py <video_file> for video playback)")
+
 # Available style models (model_file, display_name, style_image_path)
 BASE_MODELS = {
     '1': ('mosaic.pth', 'Mosaic', 'examples/fast_neural_style/images/style-images/mosaic.jpg'),
@@ -133,7 +142,7 @@ model = load_model(BASE_MODELS[current_model_key][0])
 
 def update_model():
     """Update the current model based on blend mode."""
-    global model
+    global model, last_styled_frame
     if blend_mode == 3:
         model = blend_three_models(
             BASE_MODELS[model_a_key][0],
@@ -145,6 +154,8 @@ def update_model():
         model = blend_models(BASE_MODELS[model_a_key][0], BASE_MODELS[model_b_key][0], blend_alpha)
     else:
         model = load_model(BASE_MODELS[current_model_key][0])
+    # Invalidate cached frame so next frame gets re-styled
+    last_styled_frame = None
 
 def trigger_wave():
     """Trigger a new expanding wave."""
@@ -222,22 +233,49 @@ def stylize_frame(frame):
         out = model(t).cpu()[0].clamp(0,255)
     return cv2.cvtColor(out.permute(1,2,0).byte().numpy(), cv2.COLOR_RGB2BGR)
 
-cap = cv2.VideoCapture(0)
-if not cap.isOpened():
-    print("Error: Cannot open camera")
-    exit(1)
+# Target resolution for processing
+TARGET_WIDTH = 640
+TARGET_HEIGHT = 480
 
-cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+# Open video source (file or camera)
+if VIDEO_FILE:
+    cap = cv2.VideoCapture(VIDEO_FILE)
+    if not cap.isOpened():
+        print(f"Error: Cannot open video file: {VIDEO_FILE}")
+        exit(1)
+
+    # Get video properties
+    source_fps = cap.get(cv2.CAP_PROP_FPS)
+    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+
+    orig_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    orig_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+
+    print(f"Video FPS: {source_fps}")
+    print(f"Total frames: {total_frames}, Duration: {total_frames/source_fps:.1f}s")
+    print(f"Original resolution: {orig_width}x{orig_height}, will resize to {TARGET_WIDTH}x{TARGET_HEIGHT} for processing")
+
+    # Calculate frame skip based on VIDEO_FPS
+    frame_skip = max(1, int(source_fps / VIDEO_FPS))
+    print(f"Initial playback: {VIDEO_FPS} fps (processing every {frame_skip} frames)")
+else:
+    cap = cv2.VideoCapture(0)
+    if not cap.isOpened():
+        print("Error: Cannot open camera")
+        exit(1)
+
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, TARGET_WIDTH)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, TARGET_HEIGHT)
+    frame_skip = 1  # Process every frame in camera mode
 
 # Verify we can actually read frames
 ret, test_frame = cap.read()
 if not ret or test_frame is None:
-    print("Error: Camera opened but cannot read frames")
+    print("Error: Cannot read frames from source")
     exit(1)
 
-print(f"Camera ready! Resolution: {int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))}x{int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))}")
-print(f"Actual frame shape: {test_frame.shape}")
+print(f"Ready! Resolution: {int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))}x{int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))}")
+print(f"Frame shape: {test_frame.shape}")
 print("\n=== CONTROLS ===")
 print("Single Mode (default):")
 print("  1-9,a: Select style (10 models available)")
@@ -256,6 +294,9 @@ print("  p: Toggle pulse effect on/off")
 print("  SPACE: Trigger wave (creates expanding distortion)")
 print("  ,/.: Adjust wave speed")
 print("  </> (shift+,/.): Adjust wave amplitude")
+if VIDEO_FILE:
+    print("\nVideo Playback:")
+    print("  r/f: Decrease/increase playback FPS")
 print("\n  m: Cycle blend modes (single→dual→triple)")
 print("  q: Quit")
 print(f"\nCurrent: {BASE_MODELS[current_model_key][1]}")
@@ -264,13 +305,36 @@ selecting_a = False
 selecting_b = False
 selecting_c = False
 
+frame_idx = 0
+last_styled_frame = None
+
 while True:
+    # For video mode, skip ahead to the next frame we want to process
+    if VIDEO_FILE and frame_idx > 0:
+        cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
+
     ret, frame = cap.read()
     if not ret:
-        print("Warning: Failed to read frame")
-        continue
+        if VIDEO_FILE:
+            # Loop video
+            cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+            frame_idx = 0
+            last_styled_frame = None
+            continue
+        else:
+            print("Warning: Failed to read frame")
+            continue
 
+    # Resize video frames to target resolution for faster processing
+    if VIDEO_FILE:
+        frame = cv2.resize(frame, (TARGET_WIDTH, TARGET_HEIGHT))
+
+    # Process the frame
     styled = stylize_frame(frame)
+    last_styled_frame = styled
+
+    # Advance frame index by skip amount for video, or by 1 for camera
+    frame_idx += frame_skip
 
     # Apply pulse distortion if enabled
     styled = apply_pulse_distortion(styled)
@@ -451,6 +515,17 @@ while True:
     elif key == ord('>'):  # Increase amplitude
         pulse_amplitude = min(50, pulse_amplitude + 2)
         print(f"Wave amplitude: {pulse_amplitude}px")
+    # Video playback speed controls
+    elif key == ord('r'):  # Decrease FPS
+        if VIDEO_FILE:
+            VIDEO_FPS = max(1, VIDEO_FPS - 1)
+            frame_skip = max(1, int(source_fps / VIDEO_FPS))
+            print(f"Playback FPS: {VIDEO_FPS} (processing every {frame_skip} frames)")
+    elif key == ord('f'):  # Increase FPS
+        if VIDEO_FILE:
+            VIDEO_FPS = min(int(source_fps), VIDEO_FPS + 1)
+            frame_skip = max(1, int(source_fps / VIDEO_FPS))
+            print(f"Playback FPS: {VIDEO_FPS} (processing every {frame_skip} frames)")
     elif chr(key) in BASE_MODELS:
         if selecting_a:
             model_a_key = chr(key)
