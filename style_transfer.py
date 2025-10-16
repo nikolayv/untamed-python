@@ -7,6 +7,16 @@ from neural_style.transformer_net import TransformerNet
 
 device = "mps" if torch.backends.mps.is_available() else "cpu"
 
+# Try to import mediapipe for person segmentation
+try:
+    import mediapipe as mp
+    mp_selfie_segmentation = mp.solutions.selfie_segmentation
+    segmentation_available = True
+    print("MediaPipe segmentation available")
+except ImportError:
+    segmentation_available = False
+    print("MediaPipe not available - install with: pip install mediapipe")
+
 # Check for video file argument
 VIDEO_FILE = None
 VIDEO_FPS = 2  # Initial playback fps for video mode
@@ -66,6 +76,12 @@ blend_weights = [0.33, 0.33, 0.34]  # [weight_a, weight_b, weight_c]
 
 # Visual effects state
 pulse_enabled = False
+person_isolation_enabled = False
+
+# Initialize segmentation model if available
+segmentation_model = None
+if segmentation_available:
+    segmentation_model = mp_selfie_segmentation.SelfieSegmentation(model_selection=1)
 
 # Pulse distortion parameters - track multiple waves
 active_waves = []  # List of {birth_time: frame_count, amplitude: pixels}
@@ -225,6 +241,31 @@ def apply_pulse_distortion(frame):
 
     return distorted
 
+def isolate_person(frame):
+    """Extract person mask from frame using segmentation."""
+    if not segmentation_available or segmentation_model is None:
+        return frame
+
+    # Convert BGR to RGB for MediaPipe
+    rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+
+    # Get segmentation mask
+    results = segmentation_model.process(rgb_frame)
+
+    if results.segmentation_mask is not None:
+        # Threshold mask to binary (person vs background)
+        mask = (results.segmentation_mask > 0.5).astype(np.uint8)
+
+        # Create 3-channel mask
+        mask_3ch = cv2.merge([mask, mask, mask])
+
+        # Keep only person pixels, make background black
+        isolated = frame * mask_3ch
+
+        return isolated
+
+    return frame
+
 to_tensor = transforms.ToTensor()
 def stylize_frame(frame):
     img = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
@@ -294,6 +335,9 @@ print("  p: Toggle pulse effect on/off")
 print("  SPACE: Trigger wave (creates expanding distortion)")
 print("  ,/.: Adjust wave speed")
 print("  </> (shift+,/.): Adjust wave amplitude")
+if segmentation_available:
+    print("\nPerson Isolation:")
+    print("  h: Toggle person isolation (style only people)")
 if VIDEO_FILE:
     print("\nVideo Playback:")
     print("  r/f: Decrease/increase playback FPS")
@@ -328,6 +372,10 @@ while True:
     # Resize video frames to target resolution for faster processing
     if VIDEO_FILE:
         frame = cv2.resize(frame, (TARGET_WIDTH, TARGET_HEIGHT))
+
+    # Apply person isolation if enabled
+    if person_isolation_enabled:
+        frame = isolate_person(frame)
 
     # Process the frame
     styled = stylize_frame(frame)
@@ -500,6 +548,11 @@ while True:
         if not pulse_enabled:
             active_waves.clear()
         print(f"Pulse distortion: {'ON' if pulse_enabled else 'OFF'}")
+    elif key == ord('h'):  # Toggle person isolation
+        if segmentation_available:
+            person_isolation_enabled = not person_isolation_enabled
+            last_styled_frame = None  # Invalidate cache
+            print(f"Person isolation: {'ON' if person_isolation_enabled else 'OFF'}")
     elif key == ord(' '):  # Spacebar - trigger wave
         if pulse_enabled:
             trigger_wave()
