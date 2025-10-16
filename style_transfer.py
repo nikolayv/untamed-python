@@ -7,14 +7,43 @@ from neural_style.transformer_net import TransformerNet
 
 device = "mps" if torch.backends.mps.is_available() else "cpu"
 
-# Available style models (single models only for base selection)
+# Available style models (model_file, display_name, style_image_path)
 BASE_MODELS = {
-    '1': ('mosaic.pth', 'Mosaic'),
-    '2': ('candy.pth', 'Candy'),
-    '3': ('rain_princess.pth', 'Rain Princess'),
-    '4': ('udnie.pth', 'Udnie'),
-    '5': ('epoch_2_2025-10-15_19-13-34_100000.0_10000000000.0.model', 'Custom Pattern')
+    '1': ('mosaic.pth', 'Mosaic', 'examples/fast_neural_style/images/style-images/mosaic.jpg'),
+    '2': ('candy.pth', 'Candy', 'examples/fast_neural_style/images/style-images/candy.jpg'),
+    '3': ('rain_princess.pth', 'Rain Princess', 'examples/fast_neural_style/images/style-images/rain_princess.jpg'),
+    '4': ('udnie.pth', 'Udnie', 'examples/fast_neural_style/images/style-images/udnie.jpg'),
+    '5': ('epoch_2_2025-10-16_04-29-41_100000.0_10000000000.0.model', 'Autumn Forest', 'examples/fast_neural_style/images/style-images/Autumn Forest Sunset.jpg'),
+    '6': ('epoch_2_2025-10-16_05-26-24_100000.0_10000000000.0.model', 'Kuker Ritual', 'examples/fast_neural_style/images/style-images/Bulgarian Kuker Rituals.jpg'),
+    '7': ('epoch_2_2025-10-16_06-24-07_100000.0_10000000000.0.model', 'Cave Painting', 'examples/fast_neural_style/images/style-images/hunters_cave_painting.png'),
+    '8': ('epoch_2_2025-10-16_07-21-54_100000.0_10000000000.0.model', 'Krampus', 'examples/fast_neural_style/images/style-images/Krampus Morzger Pass Salzburg Oct 2008.jpg'),
+    '9': ('epoch_2_2025-10-16_08-19-42_100000.0_10000000000.0.model', 'Storm King', 'examples/fast_neural_style/images/style-images/Storm King Alexander Calder.jpg'),
+    'a': ('epoch_2_2025-10-16_09-17-25_100000.0_10000000000.0.model', 'Purple Swirl', 'examples/fast_neural_style/images/style-images/purple_swirly.png')
 }
+
+# Load style preview images
+style_previews = {}
+preview_size = 100
+for key, (_, name, img_path) in BASE_MODELS.items():
+    img = cv2.imread(img_path)
+    if img is not None:
+        # Resize to square preview
+        h, w = img.shape[:2]
+        if h > w:
+            new_h, new_w = preview_size, int(w * preview_size / h)
+        else:
+            new_h, new_w = int(h * preview_size / w), preview_size
+        resized = cv2.resize(img, (new_w, new_h))
+        # Center crop to square
+        y_offset = (new_h - preview_size) // 2 if new_h > preview_size else 0
+        x_offset = (new_w - preview_size) // 2 if new_w > preview_size else 0
+        if new_h >= preview_size and new_w >= preview_size:
+            style_previews[key] = resized[y_offset:y_offset+preview_size, x_offset:x_offset+preview_size]
+        else:
+            # Pad to square if smaller
+            padded = np.zeros((preview_size, preview_size, 3), dtype=np.uint8)
+            padded[y_offset:y_offset+new_h, x_offset:x_offset+new_w] = resized
+            style_previews[key] = padded
 
 # Blending state
 blend_mode = 0  # 0=single, 2=dual blend, 3=triple blend
@@ -211,13 +240,13 @@ print(f"Camera ready! Resolution: {int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))}x{int(
 print(f"Actual frame shape: {test_frame.shape}")
 print("\n=== CONTROLS ===")
 print("Single Mode (default):")
-print("  1-5: Select style")
-print("\nDual Blend (press 'b' once):")
-print("  a/s: Select models A/B (then 1-5)")
+print("  1-9,a: Select style (10 models available)")
+print("\nDual Blend (press 'm' once):")
+print("  a/s: Select models A/B (then 1-9,a)")
 print("  [/]: Adjust blend ±5%")
 print("  -/+: Adjust blend ±10%")
-print("\nTriple Blend (press 'b' twice) - 3D CONTROL:")
-print("  a/s/d: Select models A/B/C (then 1-5)")
+print("\nTriple Blend (press 'm' twice) - 3D CONTROL:")
+print("  a/s/d: Select models A/B/C (then 1-9,a)")
 print("  i/k: Increase/decrease A weight")
 print("  j/l: Increase/decrease B weight")
 print("  u/o: Increase/decrease C weight")
@@ -227,7 +256,7 @@ print("  p: Toggle pulse effect on/off")
 print("  SPACE: Trigger wave (creates expanding distortion)")
 print("  ,/.: Adjust wave speed")
 print("  </> (shift+,/.): Adjust wave amplitude")
-print("\n  b: Cycle blend modes (single→dual→triple)")
+print("\n  m: Cycle blend modes (single→dual→triple)")
 print("  q: Quit")
 print(f"\nCurrent: {BASE_MODELS[current_model_key][1]}")
 
@@ -245,6 +274,48 @@ while True:
 
     # Apply pulse distortion if enabled
     styled = apply_pulse_distortion(styled)
+
+    # Display style preview(s) in corner
+    h, w = styled.shape[:2]
+    margin = 10
+    if blend_mode == 3:
+        # Show all three model previews stacked vertically
+        preview_keys = [model_a_key, model_b_key, model_c_key]
+        colors = [(255, 100, 100), (100, 255, 100), (100, 100, 255)]  # RGB colors for borders
+        for i, (key, color) in enumerate(zip(preview_keys, colors)):
+            if key in style_previews:
+                preview = style_previews[key]
+                x_offset = w - preview_size - margin
+                y_offset = margin + i * (preview_size + 5)
+                # Draw border
+                cv2.rectangle(styled, (x_offset-2, y_offset-2),
+                             (x_offset+preview_size+2, y_offset+preview_size+2), color, 2)
+                # Place preview
+                styled[y_offset:y_offset+preview_size, x_offset:x_offset+preview_size] = preview
+    elif blend_mode == 2:
+        # Show both model previews side by side
+        preview_keys = [model_a_key, model_b_key]
+        for i, key in enumerate(preview_keys):
+            if key in style_previews:
+                preview = style_previews[key]
+                x_offset = w - (2 - i) * (preview_size + 5) - margin
+                y_offset = margin
+                # Draw border
+                cv2.rectangle(styled, (x_offset-2, y_offset-2),
+                             (x_offset+preview_size+2, y_offset+preview_size+2), (255, 255, 255), 2)
+                # Place preview
+                styled[y_offset:y_offset+preview_size, x_offset:x_offset+preview_size] = preview
+    else:
+        # Show single model preview
+        if current_model_key in style_previews:
+            preview = style_previews[current_model_key]
+            x_offset = w - preview_size - margin
+            y_offset = margin
+            # Draw border
+            cv2.rectangle(styled, (x_offset-2, y_offset-2),
+                         (x_offset+preview_size+2, y_offset+preview_size+2), (255, 255, 255), 2)
+            # Place preview
+            styled[y_offset:y_offset+preview_size, x_offset:x_offset+preview_size] = preview
 
     # Display current mode on frame
     y_pos = 30
@@ -283,7 +354,7 @@ while True:
 
     if key == ord('q'):
         break
-    elif key == ord('b'):
+    elif key == ord('m'):
         blend_mode = (blend_mode + 1) % 4  # 0→1→2→3→0, but skip 1
         if blend_mode == 1:
             blend_mode = 2  # Skip to dual blend
@@ -297,16 +368,16 @@ while True:
             print(f"B: {BASE_MODELS[model_b_key][1]} {w2}%")
             print(f"C: {BASE_MODELS[model_c_key][1]} {w3}%")
         update_model()
-    elif key == ord('a'):
+    elif key == ord('a') and blend_mode > 0:
         selecting_a = True
-        print("Select Model A (press 1-5):")
-    elif key == ord('s'):
+        print("Select Model A (press 1-9,a):")
+    elif key == ord('s') and blend_mode > 0:
         selecting_b = True
-        print("Select Model B (press 1-5):")
+        print("Select Model B (press 1-9,a):")
     elif key == ord('d'):
         if blend_mode == 3:
             selecting_c = True
-            print("Select Model C (press 1-5):")
+            print("Select Model C (press 1-9,a):")
     # 3D blend controls (model A/B/C weights)
     elif key == ord('i'):  # Increase A
         if blend_mode == 3:
