@@ -13,3 +13,6 @@ matplotlib>=3.10.0
 
 # WebSocket streaming to web clients
 websockets>=13.0
+
+# Model conversion to ONNX for JavaScript deployment
+onnx>=1.19.0
