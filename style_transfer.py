@@ -62,16 +62,24 @@ ws_broadcast_counter = 0
 
 # Available style models (model_file, display_name, style_image_path)
 BASE_MODELS = {
+    # Base pre-trained models
     '1': ('mosaic.pth', 'Mosaic', 'examples/fast_neural_style/images/style-images/mosaic.jpg'),
     '2': ('candy.pth', 'Candy', 'examples/fast_neural_style/images/style-images/candy.jpg'),
     '3': ('rain_princess.pth', 'Rain Princess', 'examples/fast_neural_style/images/style-images/rain_princess.jpg'),
     '4': ('udnie.pth', 'Udnie', 'examples/fast_neural_style/images/style-images/udnie.jpg'),
-    '5': ('epoch_2_2025-10-16_04-29-41_100000.0_10000000000.0.model', 'Autumn Forest', 'examples/fast_neural_style/images/style-images/Autumn Forest Sunset.jpg'),
-    '6': ('epoch_2_2025-10-16_05-26-24_100000.0_10000000000.0.model', 'Kuker Ritual', 'examples/fast_neural_style/images/style-images/Bulgarian Kuker Rituals.jpg'),
-    '7': ('epoch_2_2025-10-16_06-24-07_100000.0_10000000000.0.model', 'Cave Painting', 'examples/fast_neural_style/images/style-images/hunters_cave_painting.png'),
-    '8': ('epoch_2_2025-10-16_07-21-54_100000.0_10000000000.0.model', 'Krampus', 'examples/fast_neural_style/images/style-images/Krampus Morzger Pass Salzburg Oct 2008.jpg'),
-    '9': ('epoch_2_2025-10-16_08-19-42_100000.0_10000000000.0.model', 'Storm King', 'examples/fast_neural_style/images/style-images/Storm King Alexander Calder.jpg'),
-    'a': ('epoch_2_2025-10-16_09-17-25_100000.0_10000000000.0.model', 'Purple Swirl', 'examples/fast_neural_style/images/style-images/purple_swirly.png')
+
+    # Animal pattern models (newly trained on 15k COCO images)
+    '5': ('epoch_2_2025-10-17_15-09-22_100000.0_10000000000.0.model', 'Zebra Fur', 'examples/fast_neural_style/images/style-images/zebra_fur.jpg'),
+    '6': ('epoch_2_2025-10-17_16-54-38_100000.0_10000000000.0.model', 'Zebra Nature', 'examples/fast_neural_style/images/style-images/zebra_nature.jpg'),
+    '7': ('epoch_2_2025-10-17_17-59-15_100000.0_10000000000.0.model', 'Tiger Fur', 'examples/fast_neural_style/images/style-images/tiger_fur.png'),
+    '8': ('epoch_2_2025-10-17_19-07-11_100000.0_10000000000.0.model', 'Tiger Nature', 'examples/fast_neural_style/images/style-images/tiger_whole.jpg'),
+    # Models 9, a, b, c, d, e still training - add them as they complete:
+    # '9': (model_file, 'Mandarin Duck Plumage', 'examples/fast_neural_style/images/style-images/mandarin_duck_plumage_1.png'),
+    # 'a': (model_file, 'Mandarin Duck Nature', 'examples/fast_neural_style/images/style-images/mandarin_duck_nature.jpg'),
+    # 'b': (model_file, 'Fawn Fur', 'examples/fast_neural_style/images/style-images/fawn_fur.jpg'),
+    # 'c': (model_file, 'Fawn Nature', 'examples/fast_neural_style/images/style-images/fawn_in_nature_1.jpeg'),
+    # 'd': (model_file, 'Gray Wolf Fur', 'examples/fast_neural_style/images/style-images/gray_wolf_fur.jpg'),
+    # 'e': (model_file, 'Gray Wolf Nature', 'examples/fast_neural_style/images/style-images/gray_wolf_whole.jpg'),
 }
 
 # Load style preview images
@@ -354,13 +362,13 @@ print(f"Ready! Resolution: {int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))}x{int(cap.get
 print(f"Frame shape: {test_frame.shape}")
 print("\n=== CONTROLS ===")
 print("Single Mode (default):")
-print("  1-9,a: Select style (10 models available)")
+print("  1-8: Select style (8 models available - 4 base + 4 animal patterns)")
 print("\nDual Blend (press 'm' once):")
-print("  a/s: Select models A/B (then 1-9,a)")
+print("  a/s: Select models A/B (then 1-8)")
 print("  [/]: Adjust blend ±5%")
 print("  -/+: Adjust blend ±10%")
 print("\nTriple Blend (press 'm' twice) - 3D CONTROL:")
-print("  a/s/d: Select models A/B/C (then 1-9,a)")
+print("  a/s/d: Select models A/B/C (then 1-8)")
 print("  i/k: Increase/decrease A weight")
 print("  j/l: Increase/decrease B weight")
 print("  u/o: Increase/decrease C weight")
@@ -617,14 +625,14 @@ while True:
         update_model()
     elif key == ord('a') and blend_mode > 0:
         selecting_a = True
-        print("Select Model A (press 1-9,a):")
+        print("Select Model A (press 1-8):")
     elif key == ord('s') and blend_mode > 0:
         selecting_b = True
-        print("Select Model B (press 1-9,a):")
+        print("Select Model B (press 1-8):")
     elif key == ord('d'):
         if blend_mode == 3:
             selecting_c = True
-            print("Select Model C (press 1-9,a):")
+            print("Select Model C (press 1-8):")
     # 3D blend controls (model A/B/C weights)
     elif key == ord('i'):  # Increase A
         if blend_mode == 3:
