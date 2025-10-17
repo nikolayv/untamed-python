@@ -6,6 +6,51 @@ EPOCHS=2
 SAVE_DIR="models"
 CHECKPOINT_DIR="models/checkpoints"
 LOG_INTERVAL=100
+MAPPING_FILE="models/model_mapping.json"
+
+# Initialize mapping file if it doesn't exist
+if [ ! -f "$MAPPING_FILE" ]; then
+    echo "{}" > "$MAPPING_FILE"
+fi
+
+# Function to update model mapping
+update_mapping() {
+    local style_image="$1"
+    local style_basename=$(basename "$style_image")
+
+    # Find the most recently created .model file
+    local model_file=$(ls -t "$SAVE_DIR"/*.model 2>/dev/null | head -1)
+
+    if [ -n "$model_file" ]; then
+        local model_basename=$(basename "$model_file")
+
+        # Update JSON mapping using Python
+        python3 -c "
+import json
+import sys
+
+mapping_file = '$MAPPING_FILE'
+style_name = '$style_basename'
+model_name = '$model_basename'
+
+# Read existing mapping
+try:
+    with open(mapping_file, 'r') as f:
+        mapping = json.load(f)
+except:
+    mapping = {}
+
+# Add new entry
+mapping[style_name] = model_name
+
+# Write back
+with open(mapping_file, 'w') as f:
+    json.dump(mapping, f, indent=2)
+
+print(f'Updated mapping: {style_name} -> {model_name}')
+"
+    fi
+}
 
 # Style images to train on - Animal patterns (fur/plumage closeups and whole animals)
 STYLES=(
@@ -43,6 +88,9 @@ for i in "${!STYLES[@]}"; do
         --checkpoint-model-dir "$CHECKPOINT_DIR" \
         --log-interval $LOG_INTERVAL \
         2>&1 | tee "training_$(basename "$style" | sed 's/ /_/g').log"
+
+    # Update mapping file with the newly created model
+    update_mapping "$style"
 
     echo ""
     echo "Completed: $(date)"
