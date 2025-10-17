@@ -112,7 +112,83 @@ Currently no automated tests exist. Manual testing workflow:
 5. Test effects (p for pulse, h for person isolation)
 
 ### Training Custom Models
-See `examples/fast_neural_style/README.md` and use `train_batch.sh` for batch training.
+
+The project uses PyTorch's fast neural style implementation to train custom style transfer models.
+
+#### Training Overview
+
+**Location**: `examples/fast_neural_style/`
+**Training Script**: `train_batch.sh` - Batch trains multiple styles sequentially
+**Content Dataset**: `data/train_15k/val2014/` - 15,000 COCO images
+**Output**: Models saved to `examples/fast_neural_style/models/` as `.model` files
+
+#### Training Configuration
+
+- **Epochs**: 2 (configured in `train_batch.sh`)
+- **Style Size**: 512px
+- **Log Interval**: 100 batches
+- **Device**: MPS (Metal Performance Shaders) on macOS, CPU fallback
+- **Checkpoints**: Saved to `models/checkpoints/` during training
+
+#### How to Train New Models
+
+1. **Add style images** to `examples/fast_neural_style/images/style-images/`
+   - Supported formats: JPG, PNG
+   - Recommended: High quality, clear pattern/texture images
+   - Naming convention: `{animal}_{type}.{ext}` (e.g., `zebra_fur.jpg`, `tiger_whole.jpg`)
+
+2. **Update `train_batch.sh`** with your style image paths:
+   ```bash
+   STYLES=(
+       "images/style-images/your_style_1.jpg"
+       "images/style-images/your_style_2.png"
+       # ... add more
+   )
+   ```
+
+3. **Run training**:
+   ```bash
+   cd examples/fast_neural_style
+   ./train_batch.sh
+   ```
+
+4. **Monitor progress**: Training logs are saved as `training_{style_name}.log`
+   ```bash
+   tail -f training_zebra_fur.jpg.log
+   ```
+
+#### Training Duration
+
+- **Per model**: ~30-60 minutes (2 epochs on 15k images with MPS)
+- **Batch training**: Multiply by number of styles (runs sequentially)
+- **Example**: 10 models = ~5-10 hours total
+
+#### After Training
+
+1. **Trained models** are saved as: `epoch_2_{timestamp}_{params}.model`
+2. **Add to application**: Update `BASE_MODELS` dict in `style_transfer.py`:
+   ```python
+   BASE_MODELS = {
+       'b': ('epoch_2_2025-10-17_13-43-24_100000.0_10000000000.0.model', 'Zebra Fur', 'images/style-images/zebra_fur.jpg'),
+       # key, model_file, display_name, preview_image
+   }
+   ```
+
+#### Training Tips
+
+- **Pattern vs Whole**: Train both closeup patterns and whole animals for variety
+  - Pattern (e.g., `zebra_fur.jpg`): Applies texture/pattern more abstractly
+  - Whole (e.g., `zebra_nature.jpg`): Transfers overall colors and composition
+- **Image Quality**: Higher quality input = better style transfer results
+- **Multiple Variations**: Train 2-3 variations per animal for blending options
+- **Style Image Selection**: Choose images with clear, distinctive patterns/colors
+
+#### Troubleshooting Training
+
+- **Out of memory**: Reduce `--style-size` in `train_batch.sh` (default: 512)
+- **Slow training**: Check device is using MPS, not CPU
+- **Poor results**: Try different style images or increase epochs
+- **Model too large**: Models are ~6-7MB each, normal size
 
 ## Code Organization
 
