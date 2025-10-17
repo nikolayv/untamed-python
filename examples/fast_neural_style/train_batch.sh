@@ -1,5 +1,5 @@
 #!/bin/bash
-# Train models for all 6 new style images sequentially
+# Train models for animal pattern style images sequentially
 
 DATASET="data/train_15k"
 EPOCHS=2
@@ -7,14 +7,18 @@ SAVE_DIR="models"
 CHECKPOINT_DIR="models/checkpoints"
 LOG_INTERVAL=100
 
-# Style images to train on
+# Style images to train on - Animal patterns (fur/plumage closeups and whole animals)
 STYLES=(
-    "images/style-images/Autumn Forest Sunset.jpg"
-    "images/style-images/Bulgarian Kuker Rituals.jpg"
-    "images/style-images/hunters_cave_painting.png"
-    "images/style-images/Krampus Morzger Pass Salzburg Oct 2008.jpg"
-    "images/style-images/Storm King Alexander Calder.jpg"
-    "images/style-images/purple_swirly.png"
+    "images/style-images/zebra_fur.jpg"
+    "images/style-images/zebra_nature.jpg"
+    "images/style-images/tiger_fur.png"
+    "images/style-images/tiger_whole.jpg"
+    "images/style-images/mandarin_duck_plumage_1.png"
+    "images/style-images/mandarin_duck_nature.jpg"
+    "images/style-images/fawn_fur.jpg"
+    "images/style-images/fawn_in_nature_1.jpeg"
+    "images/style-images/gray_wolf_fur.jpg"
+    "images/style-images/gray_wolf_whole.jpg"
 )
 
 echo "========================================"
