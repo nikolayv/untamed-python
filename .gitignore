@@ -25,3 +25,5 @@ examples/fast_neural_style/saved_models/
 .idea/
 *.swp
 *.swo
+
+.claude/settings.local.json
