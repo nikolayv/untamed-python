@@ -76,7 +76,7 @@ python3 neural_style/neural_style.py train \
     --style-size 512 \
     --save-model-dir models \
     --epochs 2 \
-    --cuda 1 \
+    --accel \
     --style-weight $STYLE_WEIGHT \
     --checkpoint-model-dir models/checkpoints \
     --log-interval 100
