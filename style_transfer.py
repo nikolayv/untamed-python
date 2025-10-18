@@ -103,17 +103,10 @@ for key, (_, name, img_path) in BASE_MODELS.items():
             padded[y_offset:y_offset+new_h, x_offset:x_offset+new_w] = resized
             style_previews[key] = padded
 
-# Blending state
-blend_mode = 0  # 0=single, 2=dual blend, 3=triple blend, 4=split screen
-model_a_key = '1'
-model_b_key = '2'
-model_c_key = '3'
+# Display mode state
+blend_mode = 0  # 0=single, 1=split screen
 split_left_key = '1'
 split_right_key = '2'
-blend_alpha = 0.5  # For 2-model blend: 0.0 = 100% model A, 1.0 = 100% model B
-
-# 3-model blend weights (barycentric coordinates - always sum to 1.0)
-blend_weights = [0.33, 0.33, 0.34]  # [weight_a, weight_b, weight_c]
 
 # Visual effects state
 pulse_enabled = False
@@ -206,21 +199,12 @@ split_left_model = None
 split_right_model = None
 
 def update_model():
-    """Update the current model based on blend mode."""
+    """Update the current model based on display mode."""
     global model, split_left_model, split_right_model, last_styled_frame
-    if blend_mode == 4:  # Split screen mode
+    if blend_mode == 1:  # Split screen mode
         split_left_model = load_model(BASE_MODELS[split_left_key][0])
         split_right_model = load_model(BASE_MODELS[split_right_key][0])
-    elif blend_mode == 3:
-        model = blend_three_models(
-            BASE_MODELS[model_a_key][0],
-            BASE_MODELS[model_b_key][0],
-            BASE_MODELS[model_c_key][0],
-            blend_weights
-        )
-    elif blend_mode == 2:
-        model = blend_models(BASE_MODELS[model_a_key][0], BASE_MODELS[model_b_key][0], blend_alpha)
-    else:
+    else:  # Single model mode
         model = load_model(BASE_MODELS[current_model_key][0])
     # Invalidate cached frame so next frame gets re-styled
     last_styled_frame = None
@@ -509,19 +493,10 @@ print(f"Frame shape: {test_frame.shape}")
 print("\n=== CONTROLS ===")
 print("Single Mode (default):")
 print("  1-4: Stock models (fast) | 5-8: Custom animal patterns (slower)")
-print("\nDual Blend (press 'm' once):")
-print("  a/s: Select models A/B (then 1-8)")
-print("  [/]: Adjust blend ±5%")
-print("  -/+: Adjust blend ±10%")
-print("\nTriple Blend (press 'm' twice) - 3D CONTROL:")
-print("  a/s/d: Select models A/B/C (then 1-8)")
-print("  i/k: Increase/decrease A weight")
-print("  j/l: Increase/decrease B weight")
-print("  u/o: Increase/decrease C weight")
-print("  (Weights auto-normalize to 100%)")
-print("\nSplit Screen (press 'm' three times):")
+print("\nSplit Screen Mode (press 'm'):")
 print("  a: Select LEFT model (then 1-8)")
 print("  s: Select RIGHT model (then 1-8)")
+print("  m: Toggle back to single mode")
 print("\nPulse Distortion:")
 print("  p: Toggle pulse effect on/off")
 print("  SPACE: Trigger wave (creates expanding distortion)")
@@ -544,13 +519,10 @@ if WS_ENABLED:
     print(f"  Server: ws://{WS_HOST}:{WS_PORT}")
     print(f"  Rate: {WS_FPS} fps, Quality: {WS_QUALITY}")
     print(f"  Clients: {len(ws_connected_clients)}")
-print("\n  m: Cycle modes (single→dual→triple→split)")
+print("\n  m: Toggle split screen mode")
 print("  q: Quit")
 print(f"\nCurrent: {BASE_MODELS[current_model_key][1]}")
 
-selecting_a = False
-selecting_b = False
-selecting_c = False
 selecting_left = False
 selecting_right = False
 
@@ -664,7 +636,7 @@ while True:
 
     # Process the frame (or skip style transfer if disabled)
     if style_transfer_enabled:
-        if blend_mode == 4:  # Split screen mode
+        if blend_mode == 1:  # Split screen mode
             styled = stylize_split_screen(frame)
         else:
             styled = stylize_frame(frame)
@@ -689,23 +661,9 @@ while True:
     # Display style preview(s) in corner
     h, w = styled.shape[:2]
     margin = 10
-    if blend_mode == 3:
-        # Show all three model previews stacked vertically
-        preview_keys = [model_a_key, model_b_key, model_c_key]
-        colors = [(255, 100, 100), (100, 255, 100), (100, 100, 255)]  # RGB colors for borders
-        for i, (key, color) in enumerate(zip(preview_keys, colors)):
-            if key in style_previews:
-                preview = style_previews[key]
-                x_offset = w - preview_size - margin
-                y_offset = margin + i * (preview_size + 5)
-                # Draw border
-                cv2.rectangle(styled, (x_offset-2, y_offset-2),
-                             (x_offset+preview_size+2, y_offset+preview_size+2), color, 2)
-                # Place preview
-                styled[y_offset:y_offset+preview_size, x_offset:x_offset+preview_size] = preview
-    elif blend_mode == 2:
-        # Show both model previews side by side
-        preview_keys = [model_a_key, model_b_key]
+    if blend_mode == 1:
+        # Split screen - show both model previews side by side
+        preview_keys = [split_left_key, split_right_key]
         for i, key in enumerate(preview_keys):
             if key in style_previews:
                 preview = style_previews[key]
@@ -751,7 +709,7 @@ while True:
 
     # Display current mode on frame
     y_pos = 30
-    if blend_mode == 4:
+    if blend_mode == 1:
         # Split screen - show left and right model names
         left_name = BASE_MODELS[split_left_key][1]
         right_name = BASE_MODELS[split_right_key][1]
@@ -760,31 +718,8 @@ while True:
         cv2.putText(styled, f"LEFT: {left_name}", (10, y_pos), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
         text_size = cv2.getTextSize(f"RIGHT: {right_name}", cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)[0]
         cv2.putText(styled, f"RIGHT: {right_name}", (w - text_size[0] - 10, y_pos), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
-
-    elif blend_mode == 3:
-        # Triple blend - show all three with bar graph
-        w1, w2, w3 = [int(w*100) for w in blend_weights]
-        name_a = BASE_MODELS[model_a_key][1][:8]
-        name_b = BASE_MODELS[model_b_key][1][:8]
-        name_c = BASE_MODELS[model_c_key][1][:8]
-
-        text = f"3D BLEND: {name_a}:{w1}% {name_b}:{w2}% {name_c}:{w3}%"
-        cv2.putText(styled, text, (10, y_pos), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
-
-        # Visual bar for each model
-        bar_y = y_pos + 30
-        bar_width = 200
-        cv2.rectangle(styled, (10, bar_y), (10 + int(bar_width * blend_weights[0]), bar_y + 10), (255, 100, 100), -1)
-        cv2.rectangle(styled, (10, bar_y + 15), (10 + int(bar_width * blend_weights[1]), bar_y + 25), (100, 255, 100), -1)
-        cv2.rectangle(styled, (10, bar_y + 30), (10 + int(bar_width * blend_weights[2]), bar_y + 40), (100, 100, 255), -1)
-
-    elif blend_mode == 2:
-        model_a_name = BASE_MODELS[model_a_key][1]
-        model_b_name = BASE_MODELS[model_b_key][1]
-        blend_pct = int(blend_alpha * 100)
-        text = f"BLEND: {model_a_name} {100-blend_pct}% | {blend_pct}% {model_b_name}"
-        cv2.putText(styled, text, (10, y_pos), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
     else:
+        # Single model mode
         cv2.putText(styled, f"Style: {BASE_MODELS[current_model_key][1]}", (10, y_pos),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
 
@@ -797,91 +732,18 @@ while True:
     if key == ord('q'):
         break
     elif key == ord('m'):
-        blend_mode = (blend_mode + 1) % 5  # 0→1→2→3→4→0, but skip 1
-        if blend_mode == 1:
-            blend_mode = 2  # Skip to dual blend
-        mode_names = {0: "SINGLE", 2: "DUAL BLEND", 3: "TRIPLE BLEND (3D)", 4: "SPLIT SCREEN"}
+        blend_mode = 1 - blend_mode  # Toggle between 0 and 1
+        mode_names = {0: "SINGLE", 1: "SPLIT SCREEN"}
         print(f"\n{mode_names[blend_mode]} MODE")
-        if blend_mode == 2:
-            print(f"A: {BASE_MODELS[model_a_key][1]}, B: {BASE_MODELS[model_b_key][1]}, Blend: {int(blend_alpha*100)}%")
-        elif blend_mode == 3:
-            w1, w2, w3 = [int(w*100) for w in blend_weights]
-            print(f"A: {BASE_MODELS[model_a_key][1]} {w1}%")
-            print(f"B: {BASE_MODELS[model_b_key][1]} {w2}%")
-            print(f"C: {BASE_MODELS[model_c_key][1]} {w3}%")
-        elif blend_mode == 4:
+        if blend_mode == 1:
             print(f"LEFT: {BASE_MODELS[split_left_key][1]}, RIGHT: {BASE_MODELS[split_right_key][1]}")
         update_model()
-    elif key == ord('a') and blend_mode > 0:
-        if blend_mode == 4:
-            selecting_left = True
-            print("Select LEFT model (press 1-8):")
-        else:
-            selecting_a = True
-            print("Select Model A (press 1-8):")
-    elif key == ord('s') and blend_mode > 0:
-        if blend_mode == 4:
-            selecting_right = True
-            print("Select RIGHT model (press 1-8):")
-        else:
-            selecting_b = True
-            print("Select Model B (press 1-8):")
-    elif key == ord('d'):
-        if blend_mode == 3:
-            selecting_c = True
-            print("Select Model C (press 1-8):")
-    # 3D blend controls (model A/B/C weights)
-    elif key == ord('i'):  # Increase A
-        if blend_mode == 3:
-            blend_weights[0] = min(1.0, blend_weights[0] + 0.05)
-            print(f"Weights: A={int(blend_weights[0]*100)}% B={int(blend_weights[1]*100)}% C={int(blend_weights[2]*100)}%")
-            update_model()
-    elif key == ord('k'):  # Decrease A
-        if blend_mode == 3:
-            blend_weights[0] = max(0.0, blend_weights[0] - 0.05)
-            print(f"Weights: A={int(blend_weights[0]*100)}% B={int(blend_weights[1]*100)}% C={int(blend_weights[2]*100)}%")
-            update_model()
-    elif key == ord('j'):  # Decrease B
-        if blend_mode == 3:
-            blend_weights[1] = max(0.0, blend_weights[1] - 0.05)
-            print(f"Weights: A={int(blend_weights[0]*100)}% B={int(blend_weights[1]*100)}% C={int(blend_weights[2]*100)}%")
-            update_model()
-    elif key == ord('l'):  # Increase B
-        if blend_mode == 3:
-            blend_weights[1] = min(1.0, blend_weights[1] + 0.05)
-            print(f"Weights: A={int(blend_weights[0]*100)}% B={int(blend_weights[1]*100)}% C={int(blend_weights[2]*100)}%")
-            update_model()
-    elif key == ord('u'):  # Decrease C
-        if blend_mode == 3:
-            blend_weights[2] = max(0.0, blend_weights[2] - 0.05)
-            print(f"Weights: A={int(blend_weights[0]*100)}% B={int(blend_weights[1]*100)}% C={int(blend_weights[2]*100)}%")
-            update_model()
-    elif key == ord('o'):  # Increase C
-        if blend_mode == 3:
-            blend_weights[2] = min(1.0, blend_weights[2] + 0.05)
-            print(f"Weights: A={int(blend_weights[0]*100)}% B={int(blend_weights[1]*100)}% C={int(blend_weights[2]*100)}%")
-            update_model()
-    # 2D blend controls
-    elif key == ord('['):  # Decrease blend
-        if blend_mode == 2:
-            blend_alpha = max(0.0, blend_alpha - 0.05)
-            print(f"Blend: {int((1-blend_alpha)*100)}% A / {int(blend_alpha*100)}% B")
-            update_model()
-    elif key == ord(']'):  # Increase blend
-        if blend_mode == 2:
-            blend_alpha = min(1.0, blend_alpha + 0.05)
-            print(f"Blend: {int((1-blend_alpha)*100)}% A / {int(blend_alpha*100)}% B")
-            update_model()
-    elif key == ord('-') or key == ord('_'):  # Large decrease
-        if blend_mode == 2:
-            blend_alpha = max(0.0, blend_alpha - 0.1)
-            print(f"Blend: {int((1-blend_alpha)*100)}% A / {int(blend_alpha*100)}% B")
-            update_model()
-    elif key == ord('+') or key == ord('='):  # Large increase
-        if blend_mode == 2:
-            blend_alpha = min(1.0, blend_alpha + 0.1)
-            print(f"Blend: {int((1-blend_alpha)*100)}% A / {int(blend_alpha*100)}% B")
-            update_model()
+    elif key == ord('a') and blend_mode == 1:
+        selecting_left = True
+        print("Select LEFT model (press 1-8):")
+    elif key == ord('s') and blend_mode == 1:
+        selecting_right = True
+        print("Select RIGHT model (press 1-8):")
     # Pulse distortion controls
     elif key == ord('p'):
         pulse_enabled = not pulse_enabled
@@ -933,31 +795,13 @@ while True:
             split_left_key = chr(key)
             print(f"LEFT model set to: {BASE_MODELS[split_left_key][1]}")
             selecting_left = False
-            if blend_mode == 4:
+            if blend_mode == 1:
                 update_model()
         elif selecting_right:
             split_right_key = chr(key)
             print(f"RIGHT model set to: {BASE_MODELS[split_right_key][1]}")
             selecting_right = False
-            if blend_mode == 4:
-                update_model()
-        elif selecting_a:
-            model_a_key = chr(key)
-            print(f"Model A set to: {BASE_MODELS[model_a_key][1]}")
-            selecting_a = False
-            if blend_mode > 0:
-                update_model()
-        elif selecting_b:
-            model_b_key = chr(key)
-            print(f"Model B set to: {BASE_MODELS[model_b_key][1]}")
-            selecting_b = False
-            if blend_mode > 0:
-                update_model()
-        elif selecting_c:
-            model_c_key = chr(key)
-            print(f"Model C set to: {BASE_MODELS[model_c_key][1]}")
-            selecting_c = False
-            if blend_mode == 3:
+            if blend_mode == 1:
                 update_model()
         elif blend_mode == 0:
             current_model_key = chr(key)
