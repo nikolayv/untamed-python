@@ -22,7 +22,7 @@ echo ""
 # Update and install dependencies
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
-apt-get install -y -qq python3-pip git wget unzip awscli > /dev/null 2>&1
+apt-get install -y -qq python3-pip git wget unzip > /dev/null 2>&1
 
 # Install PyTorch with CUDA
 pip3 install -q torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
