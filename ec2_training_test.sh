@@ -46,15 +46,23 @@ echo "Extracting dataset..."
 unzip -q train2014.zip
 mv train2014 train_full
 
-# Use first N images
-mkdir -p train_subset
+# Use first N images and organize for ImageFolder
+mkdir -p train_subset/images
 cd train_full
-find . -maxdepth 1 -name "*.jpg" | head -n $NUM_IMAGES | xargs -I {} cp {} ../train_subset/
+find . -maxdepth 1 -name "*.jpg" | head -n $NUM_IMAGES | xargs -I {} cp {} ../train_subset/images/
 cd ..
 rm -rf train_full train2014.zip
 mv train_subset train_data
-echo "Dataset ready: $(find train_data -name "*.jpg" | wc -l) images"
+echo "Dataset ready: $(find train_data/images -name "*.jpg" | wc -l) images"
 cd ..
+
+# Fix Pillow compatibility (Image.ANTIALIAS deprecated)
+echo "Patching Pillow compatibility..."
+sed -i 's/Image\.ANTIALIAS/Image.LANCZOS/g' neural_style/utils.py
+
+# Fix permissions for checkpoint directory
+mkdir -p models/checkpoints
+chmod -R 777 models
 
 # Download style image from S3
 echo "Downloading style image..."
