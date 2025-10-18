@@ -14,14 +14,18 @@ except ImportError:
 
 device = "mps" if torch.backends.mps.is_available() else "cpu"
 
-# Try to import mediapipe for person segmentation
+# Try to import mediapipe for person segmentation and hand tracking
 try:
     import mediapipe as mp
     mp_selfie_segmentation = mp.solutions.selfie_segmentation
+    mp_hands = mp.solutions.hands
+    mp_drawing = mp.solutions.drawing_utils
     segmentation_available = True
-    print("MediaPipe segmentation available")
+    hands_available = True
+    print("MediaPipe segmentation and hands available")
 except ImportError:
     segmentation_available = False
+    hands_available = False
     print("MediaPipe not available - install with: pip install mediapipe")
 
 # Parse command line arguments
@@ -62,24 +66,17 @@ ws_broadcast_counter = 0
 
 # Available style models (model_file, display_name, style_image_path)
 BASE_MODELS = {
-    # Base pre-trained models
-    '1': ('mosaic.pth', 'Mosaic', 'examples/fast_neural_style/images/style-images/mosaic.jpg'),
-    '2': ('candy.pth', 'Candy', 'examples/fast_neural_style/images/style-images/candy.jpg'),
-    '3': ('rain_princess.pth', 'Rain Princess', 'examples/fast_neural_style/images/style-images/rain_princess.jpg'),
-    '4': ('udnie.pth', 'Udnie', 'examples/fast_neural_style/images/style-images/udnie.jpg'),
+    # Stock pre-trained models (fast)
+    '1': ('mosaic.pth', 'Mosaic', 'examples/fast_neural_style/images/style-images/old/mosaic.jpg'),
+    '2': ('candy.pth', 'Candy', 'examples/fast_neural_style/images/style-images/old/candy.jpg'),
+    '3': ('rain_princess.pth', 'Rain Princess', 'examples/fast_neural_style/images/style-images/old/rain_princess.jpg'),
+    '4': ('udnie.pth', 'Udnie', 'examples/fast_neural_style/images/style-images/old/udnie.jpg'),
 
-    # Animal pattern models (newly trained on 15k COCO images)
+    # Animal pattern models (trained on 15k COCO images - slower)
     '5': ('epoch_2_2025-10-17_15-09-22_100000.0_10000000000.0.model', 'Zebra Fur', 'examples/fast_neural_style/images/style-images/zebra_fur.jpg'),
     '6': ('epoch_2_2025-10-17_16-54-38_100000.0_10000000000.0.model', 'Zebra Nature', 'examples/fast_neural_style/images/style-images/zebra_nature.jpg'),
     '7': ('epoch_2_2025-10-17_17-59-15_100000.0_10000000000.0.model', 'Tiger Fur', 'examples/fast_neural_style/images/style-images/tiger_fur.png'),
     '8': ('epoch_2_2025-10-17_19-07-11_100000.0_10000000000.0.model', 'Tiger Nature', 'examples/fast_neural_style/images/style-images/tiger_whole.jpg'),
-    # Models 9, a, b, c, d, e still training - add them as they complete:
-    # '9': (model_file, 'Mandarin Duck Plumage', 'examples/fast_neural_style/images/style-images/mandarin_duck_plumage_1.png'),
-    # 'a': (model_file, 'Mandarin Duck Nature', 'examples/fast_neural_style/images/style-images/mandarin_duck_nature.jpg'),
-    # 'b': (model_file, 'Fawn Fur', 'examples/fast_neural_style/images/style-images/fawn_fur.jpg'),
-    # 'c': (model_file, 'Fawn Nature', 'examples/fast_neural_style/images/style-images/fawn_in_nature_1.jpeg'),
-    # 'd': (model_file, 'Gray Wolf Fur', 'examples/fast_neural_style/images/style-images/gray_wolf_fur.jpg'),
-    # 'e': (model_file, 'Gray Wolf Nature', 'examples/fast_neural_style/images/style-images/gray_wolf_whole.jpg'),
 }
 
 # Load style preview images
@@ -120,11 +117,16 @@ blend_weights = [0.33, 0.33, 0.34]  # [weight_a, weight_b, weight_c]
 pulse_enabled = False
 person_isolation_enabled = False
 style_transfer_enabled = True  # Toggle to bypass style transfer
+gesture_detection_enabled = False
+last_detected_gesture = None  # Stores the last detected finger count
 
-# Initialize segmentation model if available
+# Initialize segmentation model if available (lazy initialization for performance)
 segmentation_model = None
-if segmentation_available:
-    segmentation_model = mp_selfie_segmentation.SelfieSegmentation(model_selection=1)
+# Note: segmentation_model will be initialized only when person isolation is first enabled
+
+# Initialize hand tracking model if available (lazy initialization for performance)
+hands_model = None
+# Note: hands_model will be initialized only when gesture detection is first enabled
 
 # Pulse distortion parameters - track multiple waves
 active_waves = []  # List of {birth_time: frame_count, amplitude: pixels}
@@ -286,6 +288,12 @@ def apply_pulse_distortion(frame):
 
 def isolate_person(frame):
     """Extract person mask from frame using segmentation."""
+    global segmentation_model
+
+    # Lazy initialization - only create segmentation_model when first needed
+    if segmentation_model is None and segmentation_available:
+        segmentation_model = mp_selfie_segmentation.SelfieSegmentation(model_selection=1)
+
     if not segmentation_available or segmentation_model is None:
         return frame
 
@@ -306,6 +314,106 @@ def isolate_person(frame):
         isolated = frame * mask_3ch
 
         return isolated
+
+    return frame
+
+def detect_hand_gesture(frame):
+    """Detect hand gestures and return gesture name."""
+    global last_detected_gesture, hands_model
+
+    # Lazy initialization - only create hands_model when first needed
+    if hands_model is None and hands_available:
+        hands_model = mp_hands.Hands(
+            static_image_mode=False,
+            max_num_hands=1,
+            min_detection_confidence=0.5,
+            min_tracking_confidence=0.5
+        )
+
+    if not hands_available or hands_model is None:
+        return frame
+
+    # Convert BGR to RGB for MediaPipe
+    rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+
+    # Process the frame
+    results = hands_model.process(rgb_frame)
+
+    if results.multi_hand_landmarks:
+        for hand_landmarks, handedness in zip(results.multi_hand_landmarks, results.multi_handedness):
+            # Get landmarks
+            landmarks = hand_landmarks.landmark
+            is_right_hand = handedness.classification[0].label == 'Right'
+
+            # Helper to check if finger is extended
+            def is_finger_extended(tip_id, pip_id):
+                return landmarks[tip_id].y < landmarks[pip_id].y
+
+            def is_thumb_extended():
+                thumb_tip = landmarks[mp_hands.HandLandmark.THUMB_TIP]
+                thumb_ip = landmarks[mp_hands.HandLandmark.THUMB_IP]
+                if is_right_hand:
+                    return thumb_tip.x < thumb_ip.x
+                else:
+                    return thumb_tip.x > thumb_ip.x
+
+            # Check each finger
+            thumb_up = is_thumb_extended()
+            index_up = is_finger_extended(mp_hands.HandLandmark.INDEX_FINGER_TIP, mp_hands.HandLandmark.INDEX_FINGER_PIP)
+            middle_up = is_finger_extended(mp_hands.HandLandmark.MIDDLE_FINGER_TIP, mp_hands.HandLandmark.MIDDLE_FINGER_PIP)
+            ring_up = is_finger_extended(mp_hands.HandLandmark.RING_FINGER_TIP, mp_hands.HandLandmark.RING_FINGER_PIP)
+            pinky_up = is_finger_extended(mp_hands.HandLandmark.PINKY_TIP, mp_hands.HandLandmark.PINKY_PIP)
+
+            finger_count = sum([thumb_up, index_up, middle_up, ring_up, pinky_up])
+
+            # Detect specific gestures
+            gesture = None
+
+            # Thumbs up: only thumb extended, other fingers curled, thumb pointing up
+            thumb_tip_y = landmarks[mp_hands.HandLandmark.THUMB_TIP].y
+            thumb_mcp_y = landmarks[mp_hands.HandLandmark.THUMB_MCP].y
+            if thumb_up and not index_up and not middle_up and not ring_up and not pinky_up:
+                if thumb_tip_y < thumb_mcp_y:  # Thumb pointing upward
+                    gesture = "THUMBS UP"
+                else:  # Thumb pointing downward
+                    gesture = "THUMBS DOWN"
+
+            # OK sign: thumb and index finger tips close together
+            elif thumb_up and index_up:
+                thumb_tip = landmarks[mp_hands.HandLandmark.THUMB_TIP]
+                index_tip = landmarks[mp_hands.HandLandmark.INDEX_FINGER_TIP]
+                distance = ((thumb_tip.x - index_tip.x)**2 + (thumb_tip.y - index_tip.y)**2)**0.5
+                if distance < 0.05:  # Fingers touching
+                    gesture = "OK"
+
+            # Rock sign: index and pinky up, middle and ring down
+            if gesture is None and index_up and pinky_up and not middle_up and not ring_up:
+                gesture = "ROCK"
+
+            # Peace sign: index and middle up, others down
+            elif gesture is None and index_up and middle_up and not ring_up and not pinky_up and not thumb_up:
+                gesture = "PEACE"
+
+            # Pointing: only index finger up
+            elif gesture is None and index_up and not thumb_up and not middle_up and not ring_up and not pinky_up:
+                gesture = "POINTING"
+
+            # Fist: no fingers up
+            elif finger_count == 0:
+                gesture = "FIST"
+
+            # Open palm: all fingers up
+            elif finger_count == 5:
+                gesture = "OPEN PALM"
+
+            # Default to number
+            if gesture is None:
+                gesture = f"{finger_count} FINGERS"
+
+            last_detected_gesture = gesture
+
+            # Optionally draw hand landmarks on frame
+            # mp_drawing.draw_landmarks(frame, hand_landmarks, mp_hands.HAND_CONNECTIONS)
 
     return frame
 
@@ -362,7 +470,7 @@ print(f"Ready! Resolution: {int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))}x{int(cap.get
 print(f"Frame shape: {test_frame.shape}")
 print("\n=== CONTROLS ===")
 print("Single Mode (default):")
-print("  1-8: Select style (8 models available - 4 base + 4 animal patterns)")
+print("  1-4: Stock models (fast) | 5-8: Custom animal patterns (slower)")
 print("\nDual Blend (press 'm' once):")
 print("  a/s: Select models A/B (then 1-8)")
 print("  [/]: Adjust blend ±5%")
@@ -381,6 +489,10 @@ print("  </> (shift+,/.): Adjust wave amplitude")
 if segmentation_available:
     print("\nPerson Isolation:")
     print("  h: Toggle person isolation (style only people)")
+if hands_available:
+    print("\nGesture Detection:")
+    print("  g: Toggle gesture detection")
+    print("     Recognizes: Thumbs up/down, OK, Rock, Peace, Pointing, Fist, Open palm")
 print("\nStyle Transfer:")
 print("  t: Toggle style transfer on/off (view raw/masked video)")
 if VIDEO_FILE:
@@ -498,6 +610,11 @@ while True:
     if VIDEO_FILE:
         frame = cv2.resize(frame, (TARGET_WIDTH, TARGET_HEIGHT))
 
+    # Detect hand gestures if enabled (before any effects)
+    # NOTE: Only process if explicitly enabled to avoid performance hit
+    if gesture_detection_enabled:
+        detect_hand_gesture(frame)
+
     # Apply person isolation if enabled
     if person_isolation_enabled:
         frame = isolate_person(frame)
@@ -571,6 +688,20 @@ while True:
         ws_color = (100, 255, 100) if ws_connected_clients else (100, 100, 100)
         cv2.putText(styled, ws_status_text, (w - 150, h - 20),
                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, ws_color, 1)
+
+    # Display gesture detection if enabled
+    if gesture_detection_enabled and last_detected_gesture is not None:
+        gesture_text = f"{last_detected_gesture}"
+        # Large, prominent display in the center-bottom
+        text_size = cv2.getTextSize(gesture_text, cv2.FONT_HERSHEY_SIMPLEX, 2.5, 4)[0]
+        text_x = (w - text_size[0]) // 2
+        text_y = h - 80
+        # Draw background rectangle for better visibility
+        cv2.rectangle(styled, (text_x - 20, text_y - text_size[1] - 20),
+                     (text_x + text_size[0] + 20, text_y + 20), (0, 0, 0), -1)
+        # Draw text
+        cv2.putText(styled, gesture_text, (text_x, text_y),
+                   cv2.FONT_HERSHEY_SIMPLEX, 2.5, (0, 255, 0), 4)
 
     # Display current mode on frame
     y_pos = 30
@@ -696,6 +827,12 @@ while True:
             person_isolation_enabled = not person_isolation_enabled
             last_styled_frame = None  # Invalidate cache
             print(f"Person isolation: {'ON' if person_isolation_enabled else 'OFF'}")
+    elif key == ord('g'):  # Toggle gesture detection
+        if hands_available:
+            gesture_detection_enabled = not gesture_detection_enabled
+            if not gesture_detection_enabled:
+                last_detected_gesture = None  # Clear gesture when disabled
+            print(f"Gesture detection: {'ON' if gesture_detection_enabled else 'OFF'}")
     elif key == ord('t'):  # Toggle style transfer
         style_transfer_enabled = not style_transfer_enabled
         print(f"Style transfer: {'ON' if style_transfer_enabled else 'OFF'}")
