@@ -104,10 +104,12 @@ for key, (_, name, img_path) in BASE_MODELS.items():
             style_previews[key] = padded
 
 # Blending state
-blend_mode = 0  # 0=single, 2=dual blend, 3=triple blend
+blend_mode = 0  # 0=single, 2=dual blend, 3=triple blend, 4=split screen
 model_a_key = '1'
 model_b_key = '2'
 model_c_key = '3'
+split_left_key = '1'
+split_right_key = '2'
 blend_alpha = 0.5  # For 2-model blend: 0.0 = 100% model A, 1.0 = 100% model B
 
 # 3-model blend weights (barycentric coordinates - always sum to 1.0)
@@ -200,11 +202,16 @@ def load_model(model_file):
 # Load initial model
 current_model_key = '1'
 model = load_model(BASE_MODELS[current_model_key][0])
+split_left_model = None
+split_right_model = None
 
 def update_model():
     """Update the current model based on blend mode."""
-    global model, last_styled_frame
-    if blend_mode == 3:
+    global model, split_left_model, split_right_model, last_styled_frame
+    if blend_mode == 4:  # Split screen mode
+        split_left_model = load_model(BASE_MODELS[split_left_key][0])
+        split_right_model = load_model(BASE_MODELS[split_right_key][0])
+    elif blend_mode == 3:
         model = blend_three_models(
             BASE_MODELS[model_a_key][0],
             BASE_MODELS[model_b_key][0],
@@ -425,6 +432,37 @@ def stylize_frame(frame):
         out = model(t).cpu()[0].clamp(0,255)
     return cv2.cvtColor(out.permute(1,2,0).byte().numpy(), cv2.COLOR_RGB2BGR)
 
+def stylize_split_screen(frame):
+    """Apply different style models to left and right halves of the frame."""
+    h, w = frame.shape[:2]
+    mid = w // 2
+
+    # Split frame into left and right halves
+    left_half = frame[:, :mid]
+    right_half = frame[:, mid:]
+
+    # Process left half with left model
+    img_left = Image.fromarray(cv2.cvtColor(left_half, cv2.COLOR_BGR2RGB))
+    t_left = to_tensor(img_left).unsqueeze(0).to(device) * 255
+    with torch.no_grad():
+        out_left = split_left_model(t_left).cpu()[0].clamp(0,255)
+    styled_left = cv2.cvtColor(out_left.permute(1,2,0).byte().numpy(), cv2.COLOR_RGB2BGR)
+
+    # Process right half with right model
+    img_right = Image.fromarray(cv2.cvtColor(right_half, cv2.COLOR_BGR2RGB))
+    t_right = to_tensor(img_right).unsqueeze(0).to(device) * 255
+    with torch.no_grad():
+        out_right = split_right_model(t_right).cpu()[0].clamp(0,255)
+    styled_right = cv2.cvtColor(out_right.permute(1,2,0).byte().numpy(), cv2.COLOR_RGB2BGR)
+
+    # Combine the two halves
+    styled = np.hstack([styled_left, styled_right])
+
+    # Draw a white vertical line down the middle
+    cv2.line(styled, (mid, 0), (mid, h), (255, 255, 255), 2)
+
+    return styled
+
 # Target resolution for processing
 TARGET_WIDTH = 640
 TARGET_HEIGHT = 480
@@ -481,6 +519,9 @@ print("  i/k: Increase/decrease A weight")
 print("  j/l: Increase/decrease B weight")
 print("  u/o: Increase/decrease C weight")
 print("  (Weights auto-normalize to 100%)")
+print("\nSplit Screen (press 'm' three times):")
+print("  a: Select LEFT model (then 1-8)")
+print("  s: Select RIGHT model (then 1-8)")
 print("\nPulse Distortion:")
 print("  p: Toggle pulse effect on/off")
 print("  SPACE: Trigger wave (creates expanding distortion)")
@@ -503,13 +544,15 @@ if WS_ENABLED:
     print(f"  Server: ws://{WS_HOST}:{WS_PORT}")
     print(f"  Rate: {WS_FPS} fps, Quality: {WS_QUALITY}")
     print(f"  Clients: {len(ws_connected_clients)}")
-print("\n  m: Cycle blend modes (single→dual→triple)")
+print("\n  m: Cycle modes (single→dual→triple→split)")
 print("  q: Quit")
 print(f"\nCurrent: {BASE_MODELS[current_model_key][1]}")
 
 selecting_a = False
 selecting_b = False
 selecting_c = False
+selecting_left = False
+selecting_right = False
 
 frame_idx = 0
 last_styled_frame = None
@@ -621,7 +664,10 @@ while True:
 
     # Process the frame (or skip style transfer if disabled)
     if style_transfer_enabled:
-        styled = stylize_frame(frame)
+        if blend_mode == 4:  # Split screen mode
+            styled = stylize_split_screen(frame)
+        else:
+            styled = stylize_frame(frame)
         last_styled_frame = styled
     else:
         styled = frame  # Just use original/masked frame without styling
@@ -705,7 +751,17 @@ while True:
 
     # Display current mode on frame
     y_pos = 30
-    if blend_mode == 3:
+    if blend_mode == 4:
+        # Split screen - show left and right model names
+        left_name = BASE_MODELS[split_left_key][1]
+        right_name = BASE_MODELS[split_right_key][1]
+
+        # Show model names at top corners
+        cv2.putText(styled, f"LEFT: {left_name}", (10, y_pos), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
+        text_size = cv2.getTextSize(f"RIGHT: {right_name}", cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)[0]
+        cv2.putText(styled, f"RIGHT: {right_name}", (w - text_size[0] - 10, y_pos), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
+
+    elif blend_mode == 3:
         # Triple blend - show all three with bar graph
         w1, w2, w3 = [int(w*100) for w in blend_weights]
         name_a = BASE_MODELS[model_a_key][1][:8]
@@ -741,10 +797,10 @@ while True:
     if key == ord('q'):
         break
     elif key == ord('m'):
-        blend_mode = (blend_mode + 1) % 4  # 0→1→2→3→0, but skip 1
+        blend_mode = (blend_mode + 1) % 5  # 0→1→2→3→4→0, but skip 1
         if blend_mode == 1:
             blend_mode = 2  # Skip to dual blend
-        mode_names = {0: "SINGLE", 2: "DUAL BLEND", 3: "TRIPLE BLEND (3D)"}
+        mode_names = {0: "SINGLE", 2: "DUAL BLEND", 3: "TRIPLE BLEND (3D)", 4: "SPLIT SCREEN"}
         print(f"\n{mode_names[blend_mode]} MODE")
         if blend_mode == 2:
             print(f"A: {BASE_MODELS[model_a_key][1]}, B: {BASE_MODELS[model_b_key][1]}, Blend: {int(blend_alpha*100)}%")
@@ -753,13 +809,23 @@ while True:
             print(f"A: {BASE_MODELS[model_a_key][1]} {w1}%")
             print(f"B: {BASE_MODELS[model_b_key][1]} {w2}%")
             print(f"C: {BASE_MODELS[model_c_key][1]} {w3}%")
+        elif blend_mode == 4:
+            print(f"LEFT: {BASE_MODELS[split_left_key][1]}, RIGHT: {BASE_MODELS[split_right_key][1]}")
         update_model()
     elif key == ord('a') and blend_mode > 0:
-        selecting_a = True
-        print("Select Model A (press 1-8):")
+        if blend_mode == 4:
+            selecting_left = True
+            print("Select LEFT model (press 1-8):")
+        else:
+            selecting_a = True
+            print("Select Model A (press 1-8):")
     elif key == ord('s') and blend_mode > 0:
-        selecting_b = True
-        print("Select Model B (press 1-8):")
+        if blend_mode == 4:
+            selecting_right = True
+            print("Select RIGHT model (press 1-8):")
+        else:
+            selecting_b = True
+            print("Select Model B (press 1-8):")
     elif key == ord('d'):
         if blend_mode == 3:
             selecting_c = True
@@ -863,7 +929,19 @@ while True:
             frame_skip = max(1, int(source_fps / VIDEO_FPS))
             print(f"Playback FPS: {VIDEO_FPS} (processing every {frame_skip} frames)")
     elif chr(key) in BASE_MODELS:
-        if selecting_a:
+        if selecting_left:
+            split_left_key = chr(key)
+            print(f"LEFT model set to: {BASE_MODELS[split_left_key][1]}")
+            selecting_left = False
+            if blend_mode == 4:
+                update_model()
+        elif selecting_right:
+            split_right_key = chr(key)
+            print(f"RIGHT model set to: {BASE_MODELS[split_right_key][1]}")
+            selecting_right = False
+            if blend_mode == 4:
+                update_model()
+        elif selecting_a:
             model_a_key = chr(key)
             print(f"Model A set to: {BASE_MODELS[model_a_key][1]}")
             selecting_a = False
