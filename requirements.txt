@@ -1,12 +1,15 @@
 # Core dependencies for neural style transfer
-torch>=2.5.0
-torchvision>=0.20.0
-numpy>=1.26.0
+# IMPORTANT: Pinned to 2.5.1 - version 2.9.0 has performance issues
+torch==2.5.1
+torchvision==0.20.1
+torchaudio==2.5.1
+numpy==1.26.4  # Required by mediapipe, incompatible with numpy 2.x
 opencv-python>=4.12.0
+opencv-contrib-python==4.11.0.86  # Required by mediapipe
 Pillow>=11.0.0
 
-# Optional: Person segmentation/isolation
-mediapipe>=0.10.0
+# Optional: Person segmentation/isolation and hand gesture detection
+mediapipe==0.10.21
 
 # Training and utilities
 matplotlib>=3.10.0
