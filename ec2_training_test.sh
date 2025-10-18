@@ -34,32 +34,38 @@ cd /home/ubuntu
 mkdir -p neural_style_training
 cd neural_style_training
 
-# Clone repo
-echo "Cloning PyTorch examples..."
-git clone -q https://github.com/pytorch/examples.git
+# Clone repo (skip if exists and resuming)
+if [ ! -d "examples" ]; then
+    echo "Cloning PyTorch examples..."
+    git clone -q https://github.com/pytorch/examples.git
+fi
 cd examples/fast_neural_style
 
-# Download COCO dataset
-echo "Downloading COCO dataset..."
-mkdir -p data && cd data
-wget -q http://images.cocodataset.org/zips/train2014.zip
-echo "Extracting dataset..."
-unzip -q train2014.zip
-mv train2014 train_full
+# Download COCO dataset (skip if exists and resuming)
+if [ ! -d "data/train_data" ]; then
+    echo "Downloading COCO dataset..."
+    mkdir -p data && cd data
+    wget -q http://images.cocodataset.org/zips/train2014.zip
+    echo "Extracting dataset..."
+    unzip -q train2014.zip
+    mv train2014 train_full
 
-# Use first N images and organize for ImageFolder
-mkdir -p train_subset/images
-cd train_full
-find . -maxdepth 1 -name "*.jpg" | head -n $NUM_IMAGES | xargs -I {} cp {} ../train_subset/images/
-cd ..
-rm -rf train_full train2014.zip
-mv train_subset train_data
-echo "Dataset ready: $(find train_data/images -name "*.jpg" | wc -l) images"
-cd ..
+    # Use first N images and organize for ImageFolder
+    mkdir -p train_subset/images
+    cd train_full
+    find . -maxdepth 1 -name "*.jpg" | head -n $NUM_IMAGES | xargs -I {} cp {} ../train_subset/images/
+    cd ..
+    rm -rf train_full train2014.zip
+    mv train_subset train_data
+    echo "Dataset ready: $(find train_data/images -name "*.jpg" | wc -l) images"
+    cd ..
+else
+    echo "Dataset already exists, skipping download"
+fi
 
 # Fix Pillow compatibility (Image.ANTIALIAS deprecated)
 echo "Patching Pillow compatibility..."
-sed -i 's/Image\.ANTIALIAS/Image.LANCZOS/g' neural_style/utils.py
+sed -i 's/Image\.ANTIALIAS/Image.LANCZOS/g' neural_style/utils.py 2>/dev/null || true
 
 # Fix permissions for checkpoint directory
 mkdir -p models/checkpoints
