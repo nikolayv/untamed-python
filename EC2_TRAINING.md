@@ -1,153 +1,192 @@
-# EC2 Parallel Training Setup
+# AWS EC2 Neural Style Training
 
-Train all 6 remaining models in parallel on EC2 spot instances.
+Current AWS setup for training neural style transfer models on EC2.
 
-## Quick Setup (30 minutes)
+## Infrastructure
 
-### 1. Upload Style Images to S3
-
-First, upload your style images so EC2 instances can download them:
-
-```bash
-# Create S3 bucket (one-time)
-aws s3 mb s3://neural-style-training-YOUR-NAME
-
-# Upload style images
-cd examples/fast_neural_style/images/style-images
-aws s3 cp mandarin_duck_plumage_1.png s3://neural-style-training-YOUR-NAME/
-aws s3 cp mandarin_duck_nature.jpg s3://neural-style-training-YOUR-NAME/
-aws s3 cp fawn_fur.jpg s3://neural-style-training-YOUR-NAME/
-aws s3 cp fawn_in_nature_1.jpeg s3://neural-style-training-YOUR-NAME/
-aws s3 cp gray_wolf_fur.jpg s3://neural-style-training-YOUR-NAME/
-aws s3 cp gray_wolf_whole.jpg s3://neural-style-training-YOUR-NAME/
-
-# Make them publicly readable (or use presigned URLs)
-aws s3 sync s3://neural-style-training-YOUR-NAME/ s3://neural-style-training-YOUR-NAME/ --acl public-read
+### S3 Bucket: `nav-untamed-style-transfer-models`
+```
+style-images/           # 29 style images for training
+models/                 # Trained models organized by config
+  zebra-nature-15k-5x/
+  zebra-nature-40k-default/
+  tiger-fur-40k-default/
+  mandarin-duck-plumage-2-40k-default/  # in progress
+  mandarin-duck-nature-40k-default/     # in progress
+checkpoints/            # Training checkpoints for resuming
 ```
 
-### 2. Configure Launch Script
+### Training Script: `ec2_training_test.sh`
+Location: `/Users/nikolay/src/untamed/ec2_training_test.sh` (also on GitHub)
 
-Edit `launch_training_fleet.sh`:
-
+**Usage:**
 ```bash
-# Update these values:
-KEY_NAME="your-ec2-key-name"  # Your EC2 SSH key name
-SECURITY_GROUP="your-security-group"  # Security group with SSH access
-S3_BUCKET="neural-style-training-YOUR-NAME"  # Your bucket name
-
-# Update AMI for your region (shown: us-east-1)
-# Find Ubuntu AMI: aws ec2 describe-images --owners 099720109477 --filters "Name=name,Values=ubuntu/images/hvm-ssd/ubuntu-jammy-22.04-amd64-server-*" --query 'Images[0].ImageId'
+./ec2_training_test.sh STYLE_URL STYLE_NAME NUM_IMAGES STYLE_WEIGHT S3_BUCKET [CHECKPOINT]
 ```
 
-Update the S3 URLs in `STYLES` array to match your bucket.
+**Parameters:**
+- `STYLE_NAME`: Filename of style image (e.g., `zebra_nature.jpg`)
+- `NUM_IMAGES`: 15000 or 40000
+- `STYLE_WEIGHT`: 1e10 (default) or 5e10 (5x stronger)
+- `S3_BUCKET`: `nav-untamed-style-transfer-models`
+- `CHECKPOINT`: (optional) S3 path to resume from
 
-### 3. Launch Training Fleet
+**Features:**
+- Idempotent (can resume if interrupted)
+- Downloads style images from `s3://BUCKET/style-images/`
+- Uploads models to `s3://BUCKET/models/{style-config}/`
+- Uses correct Ubuntu AMI: `ami-0c398cb65a93047f2`
 
+### EC2 Configuration
+- **Instance Type**: g4dn.xlarge (NVIDIA T4 GPU, 4 vCPUs)
+- **AMI**: ami-0c398cb65a93047f2 (Ubuntu 22.04)
+- **Key**: memgenie_deploy (~/.aws/memgenie_deploy.pem)
+- **Security Group**: sg-198b6e12
+- **IAM Role**: EC2-NeuralStyle-Profile (S3 full access)
+- **vCPU Limit**: 8 total (can run 2 g4dn.xlarge simultaneously)
+- **Storage**: 80GB gp3
+
+## Active Training (2025-10-18)
+
+### Running Instances
+1. **mandarin-duck-plumage-2** (i-0a258165d0dba4529 @ 3.239.111.89)
+   - 40k images, default weight (1e10)
+   - Status: Training in progress
+
+2. **mandarin-duck-nature** (i-071133c23839d21dd)
+   - 40k images, default weight (1e10)
+   - Status: Just launched
+
+### Completed Models
+- zebra-nature-15k-5x
+- zebra-nature-40k-default
+- tiger-fur-40k-default (2 versions)
+
+## Next Training Queue
+
+Priority styles to train next (40k images, default weight):
+1. ✅ mandarin_duck_plumage_2.png (in progress)
+2. ✅ mandarin_duck_nature.jpg (in progress)
+3. mandarin_duck_plumage_1.png
+4. New styles from Downloads/animal art:
+   - Verneuil flying fish (15k, default weight)
+   - Squirrels 2 (15k, default weight)
+
+Remaining 24+ style images in S3 `style-images/` folder.
+
+## Launching New Training
+
+### Launch Single Instance
 ```bash
-chmod +x launch_training_fleet.sh
-./launch_training_fleet.sh
+# 1. Create userdata script
+cat > /tmp/train_STYLE.sh << 'EOF'
+#!/bin/bash
+cd /home/ubuntu
+curl -o train.sh https://raw.githubusercontent.com/nikolayv/untamed-python/main/ec2_training_test.sh
+chmod +x train.sh
+nohup ./train.sh unused STYLE_NAME NUM_IMAGES STYLE_WEIGHT nav-untamed-style-transfer-models > /var/log/training.log 2>&1 &
+EOF
+
+# 2. Launch instance
+aws ec2 run-instances \
+  --image-id ami-0c398cb65a93047f2 \
+  --instance-type g4dn.xlarge \
+  --key-name memgenie_deploy \
+  --security-group-ids sg-198b6e12 \
+  --iam-instance-profile Name=EC2-NeuralStyle-Profile \
+  --user-data file:///tmp/train_STYLE.sh \
+  --tag-specifications 'ResourceType=instance,Tags=[{Key=Name,Value=train-STYLE}]'
 ```
 
-This will:
-- Launch 6 g4dn.xlarge spot instances
-- Each downloads COCO dataset independently
-- Each trains 1 model in parallel
-- Models uploaded to S3 when done
-
-**Cost: ~$6 for 1 hour** (or ~$18 on-demand if spot unavailable)
-
-### 4. Monitor Progress
-
+### Monitor Training
 ```bash
-# Check instance status
-aws ec2 describe-instances --filters "Name=tag:Project,Values=neural-style" --query 'Reservations[*].Instances[*].[InstanceId,State.Name,PublicIpAddress,Tags[?Key==`Name`].Value|[0]]' --output table
+# Get instance IP
+aws ec2 describe-instances --instance-ids INSTANCE_ID \
+  --query 'Reservations[0].Instances[0].PublicIpAddress' --output text
 
-# SSH to instance and watch logs
-ssh -i ~/.ssh/your-key.pem ubuntu@<instance-ip>
+# SSH and watch logs
+ssh -i ~/.aws/memgenie_deploy.pem ubuntu@INSTANCE_IP
 tail -f /var/log/training.log
 
-# Check S3 for completed models
-aws s3 ls s3://neural-style-training-YOUR-NAME/
+# Or check from local
+ssh -i ~/.aws/memgenie_deploy.pem ubuntu@INSTANCE_IP "tail -50 /var/log/training.log"
 ```
 
-### 5. Download Trained Models
-
+### Reuse Instance for Multiple Jobs
+After a training job completes, keep the instance running and launch new job:
 ```bash
-# Download all models from S3
-aws s3 sync s3://neural-style-training-YOUR-NAME/ examples/fast_neural_style/models/ --exclude "*" --include "*.model"
-```
+# Instance already has dataset and dependencies
+# Just download new style image and train
+ssh -i ~/.aws/memgenie_deploy.pem ubuntu@INSTANCE_IP
 
-### 6. Cleanup (Save Money!)
+cd /home/ubuntu/neural_style_training/examples/fast_neural_style
+aws s3 cp s3://nav-untamed-style-transfer-models/style-images/NEW_STYLE.jpg images/style-images/
 
-```bash
-# Terminate all training instances
-aws ec2 terminate-instances --instance-ids $(aws ec2 describe-instances --filters "Name=tag:Project,Values=neural-style" "Name=instance-state-name,Values=running" --query 'Reservations[*].Instances[*].InstanceId' --output text)
-```
-
-## Alternative: Manual Single Instance
-
-If you just want to test one model first:
-
-```bash
-# 1. Launch instance
-aws ec2 run-instances \
-  --image-id ami-0c7217cdde317cfec \
-  --instance-type g4dn.xlarge \
-  --key-name your-key \
-  --security-groups your-sg \
-  --instance-market-options "MarketType=spot" \
-  --block-device-mappings "DeviceName=/dev/sda1,Ebs={VolumeSize=50}"
-
-# 2. SSH in
-ssh -i ~/.ssh/your-key.pem ubuntu@<instance-ip>
-
-# 3. Run setup manually
-sudo apt update && sudo apt install -y python3-pip git wget unzip
-pip3 install torch torchvision Pillow numpy
-git clone https://github.com/pytorch/examples.git
-cd examples/fast_neural_style
-
-# 4. Download COCO dataset
-mkdir -p data && cd data
-wget http://images.cocodataset.org/zips/train2014.zip
-unzip train2014.zip
-mv train2014 train_15k
-cd train_15k && ls | head -n 15000 > /tmp/keep.txt && ls | grep -v -F -f /tmp/keep.txt | xargs rm
-cd ../..
-
-# 5. Download style image
-mkdir -p images/style-images && cd images/style-images
-wget https://your-bucket.s3.amazonaws.com/mandarin_duck_plumage_1.png
-cd ../..
-
-# 6. Train
-python neural_style/neural_style.py train \
-  --dataset data/train_15k \
-  --style-image images/style-images/mandarin_duck_plumage_1.png \
+python3 neural_style/neural_style.py train \
+  --dataset data/train_data \
+  --style-image images/style-images/NEW_STYLE.jpg \
   --style-size 512 \
   --save-model-dir models \
   --epochs 2 \
-  --cuda 1 \
+  --accel \
+  --style-weight 1e10 \
+  --checkpoint-model-dir models/checkpoints \
   --log-interval 100
 ```
 
-## Timing
+## Cleanup
 
-- Instance launch: 1-2 min
-- COCO download: 5-10 min
-- Training (2 epochs, 15k images): 30-60 min per model
-- **Total: ~1 hour** for all 6 models in parallel
+### Terminate Instances
+```bash
+# Terminate specific instance
+aws ec2 terminate-instances --instance-ids INSTANCE_ID
 
-## Cost Breakdown
+# Terminate all training instances
+aws ec2 terminate-instances --instance-ids $(
+  aws ec2 describe-instances \
+    --filters "Name=tag:Name,Values=train-*" "Name=instance-state-name,Values=running" \
+    --query 'Reservations[*].Instances[*].InstanceId' --output text
+)
+```
 
-**Spot instances (recommended):**
-- 6 × g4dn.xlarge × 1 hour × $0.16/hr = **$0.96**
-- Plus storage: 6 × 50GB × 1 hour × $0.10/GB-month = **$0.02**
-- **Total: ~$1**
+### Download Models
+```bash
+# Sync all models from S3
+aws s3 sync s3://nav-untamed-style-transfer-models/models/ \
+  examples/fast_neural_style/models/ --exclude "*" --include "*.model"
+```
 
-**On-demand (if spot unavailable):**
-- 6 × g4dn.xlarge × 1 hour × $0.526/hr = **$3.16**
-- Plus storage: **$0.02**
-- **Total: ~$3.20**
+## Checkpoint Resume
 
-Much cheaper than running your Mac for 12 hours!
+To resume training from a checkpoint:
+```bash
+# Checkpoint files are in s3://nav-untamed-style-transfer-models/checkpoints/
+# Pass as 6th parameter to training script:
+./train.sh unused STYLE_NAME NUM_IMAGES STYLE_WEIGHT BUCKET s3://BUCKET/checkpoints/checkpoint.pth
+```
+
+## Cost Estimate
+
+- g4dn.xlarge on-demand: $0.526/hour
+- Training time: ~40-60 min per model (40k images)
+- Cost per model: ~$0.35-0.50
+- Full 30 models: ~$10-15
+
+## Common Commands
+
+```bash
+# List running training instances
+aws ec2 describe-instances \
+  --filters "Name=instance-state-name,Values=running" "Name=instance-type,Values=g4dn.xlarge" \
+  --query 'Reservations[*].Instances[*].[InstanceId,PublicIpAddress,Tags[?Key==`Name`].Value|[0]]' \
+  --output table
+
+# List models in S3
+aws s3 ls s3://nav-untamed-style-transfer-models/models/ --recursive
+
+# List style images
+aws s3 ls s3://nav-untamed-style-transfer-models/style-images/
+
+# Check training progress
+ssh -i ~/.aws/memgenie_deploy.pem ubuntu@INSTANCE_IP "tail -20 /var/log/training.log"
+```
