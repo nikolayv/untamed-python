@@ -1,6 +1,6 @@
 #!/bin/bash
 # EC2 Training Script with configurable parameters
-# Usage: ./script.sh STYLE_IMAGE_URL STYLE_NAME NUM_IMAGES STYLE_WEIGHT S3_BUCKET
+# Usage: ./script.sh STYLE_IMAGE_URL STYLE_NAME NUM_IMAGES STYLE_WEIGHT S3_BUCKET [CHECKPOINT]
 
 set -e
 
@@ -9,6 +9,7 @@ STYLE_IMAGE_NAME="$2"
 NUM_IMAGES="${3:-15000}"  # Default 15k
 STYLE_WEIGHT="${4:-1e10}" # Default 1e10
 S3_BUCKET="$5"
+CHECKPOINT_FILE="$6"       # Optional: S3 path to checkpoint file
 
 echo "=========================================="
 echo "EC2 Neural Style Transfer Training"
@@ -69,12 +70,24 @@ echo "Downloading style image..."
 mkdir -p images/style-images
 aws s3 cp "s3://$S3_BUCKET/$STYLE_IMAGE_NAME" "images/style-images/$STYLE_IMAGE_NAME"
 
+# Download checkpoint if resuming
+RESUME_ARG=""
+if [ -n "$CHECKPOINT_FILE" ]; then
+    echo "Downloading checkpoint from S3..."
+    aws s3 cp "$CHECKPOINT_FILE" "models/checkpoints/resume.pth"
+    RESUME_ARG="--resume models/checkpoints/resume.pth"
+    echo "Will resume from checkpoint"
+fi
+
 # Train model
 echo ""
 echo "=========================================="
 echo "Starting Training"
 echo "Images: $NUM_IMAGES"
 echo "Style Weight: $STYLE_WEIGHT"
+if [ -n "$CHECKPOINT_FILE" ]; then
+    echo "Resuming from: $CHECKPOINT_FILE"
+fi
 echo "=========================================="
 echo ""
 
@@ -87,7 +100,8 @@ python3 neural_style/neural_style.py train \
     --accel \
     --style-weight $STYLE_WEIGHT \
     --checkpoint-model-dir models/checkpoints \
-    --log-interval 100
+    --log-interval 100 \
+    $RESUME_ARG
 
 # Find trained model
 MODEL_FILE=$(ls -t models/*.model | head -1)
