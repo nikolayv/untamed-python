@@ -4,7 +4,7 @@
 exec > /var/log/training.log 2>&1
 
 # Download training script
-curl -o /tmp/train.sh https://raw.githubusercontent.com/nikolay/untamed/main/ec2_training_test.sh || \
+curl -o /tmp/train.sh https://raw.githubusercontent.com/nikolayv/untamed-python/main/ec2_training_test.sh || \
 cat > /tmp/train.sh << 'EOFSCRIPT'
 #!/bin/bash
 # EC2 Training Script with configurable parameters
