@@ -25,9 +25,9 @@ export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
 apt-get install -y -qq python3-pip git wget unzip > /dev/null 2>&1
 
-# Install PyTorch with CUDA
-pip3 install -q torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118 2>/dev/null || pip3 install --break-system-packages -q torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
-pip3 install -q Pillow numpy 2>/dev/null || pip3 install --break-system-packages -q Pillow numpy
+# Install PyTorch with CUDA (running as root, no --break-system-packages needed)
+pip3 install -q torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+pip3 install -q Pillow numpy
 
 # Setup working directory
 cd /home/ubuntu
