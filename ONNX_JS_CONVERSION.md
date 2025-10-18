@@ -72,13 +72,15 @@ ONNX Runtime Web provides WebAssembly and WebGL backends for fast inference:
       // Process output
       const output = results.output.data;
 
-      // Convert back to canvas (clamp to 0-255)
+      // CRITICAL: Explicitly clamp output to [0, 255]
+      // Model outputs can range from negative to >255
+      // Example: candy.pth produces values from -55 to +309
       const outputData = new Uint8ClampedArray(256 * 256 * 4);
       for (let i = 0; i < 256 * 256; i++) {
-        outputData[i * 4] = output[i];                  // R
-        outputData[i * 4 + 1] = output[i + 256*256];    // G
-        outputData[i * 4 + 2] = output[i + 256*256*2];  // B
-        outputData[i * 4 + 3] = 255;                    // A
+        outputData[i * 4] = Math.max(0, Math.min(255, output[i]));                  // R
+        outputData[i * 4 + 1] = Math.max(0, Math.min(255, output[i + 256*256]));    // G
+        outputData[i * 4 + 2] = Math.max(0, Math.min(255, output[i + 256*256*2]));  // B
+        outputData[i * 4 + 3] = 255;                                                // A
       }
 
       const outCanvas = document.getElementById('output');
@@ -153,10 +155,39 @@ tf.browser.toPixels(output.squeeze(), canvas);
 **Output:**
 - Shape: `(batch, 3, height, width)` - NCHW format for ONNX
 - Type: Float32
-- Range: [0, 255] (clip values outside this range)
+- Range: **UNBOUND** - can be negative or > 255
 - Channels: RGB order
 
+⚠️ **CRITICAL: You MUST clamp output values to [0, 255]**
+
+The neural style transfer models produce unconstrained outputs that can range far outside [0, 255]:
+- Typical range: **-60 to +310**
+- Example measurement (candy.pth): -55.21 to +309.00
+
+**What happens if you don't clamp:**
+- Values < 0 → may display as white due to overflow or cause visual artifacts
+- Values > 255 → may overflow or cause washed-out, nearly-white images
+- Implicit Uint8ClampedArray conversion is NOT sufficient
+
+**Correct clamping in JavaScript:**
+```javascript
+// Explicitly clamp BEFORE assigning to output array
+const clampedValue = Math.max(0, Math.min(255, rawModelOutput));
+```
+
+**Incorrect (will cause white/washed out images):**
+```javascript
+// DON'T rely on implicit Uint8ClampedArray clamping
+outputArray[i] = rawModelOutput;  // ❌ Wrong!
+```
+
 ## Troubleshooting
+
+**Issue: Output is nearly white with sparse squiggles**
+- **Cause**: Missing explicit clamping of model outputs
+- **Solution**: Add `Math.max(0, Math.min(255, value))` when converting outputs
+- **Why**: Model produces values from -60 to +310; values > 255 appear white
+- **See**: "Model Input/Output" section above for correct code
 
 **Issue: Model too large for browser**
 - Try quantization: `python3 -m onnxruntime.quantization.preprocess --input candy.onnx --output candy_quant.onnx`
@@ -169,6 +200,7 @@ tf.browser.toPixels(output.squeeze(), canvas);
 **Issue: Colors look wrong**
 - Check RGB vs BGR ordering
 - Verify normalization (should be [0, 255], not [0, 1])
+- Ensure explicit clamping to [0, 255]
 
 ## Resources
 
