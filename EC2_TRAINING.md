@@ -42,12 +42,12 @@ Location: `/Users/nikolay/src/untamed/setup_and_train.sh` (on GitHub main branch
 
 ### EC2 Configuration
 - **Instance Type**: g4dn.xlarge (NVIDIA T4 GPU, 4 vCPUs)
-- **AMI**: ami-0b5ea73381626fce3 (Ubuntu 22.04 with NVIDIA GPU drivers)
+- **AMI**: ami-0b5ea73381626fce3 (Ubuntu 22.04 with NVIDIA GPU drivers - comes with ~80GB pre-installed)
 - **Key**: memgenie_deploy (~/.aws/memgenie_deploy.pem)
 - **Security Group**: sg-198b6e12
 - **IAM Role**: EC2-NeuralStyle-Profile (S3 full access)
 - **vCPU Limit**: 8 total (can run 2 g4dn.xlarge simultaneously)
-- **Storage**: 100GB gp3 (REQUIRED - pip cache ~3GB, dataset ~17GB, PyTorch ~8GB)
+- **Storage**: 200GB gp3 (RECOMMENDED - AMI base: ~80GB, dataset: ~17GB, working space: ~20GB, buffer: ~80GB)
 
 ## Active Training (2025-10-18)
 
@@ -97,7 +97,7 @@ aws ec2 run-instances \
   --key-name memgenie_deploy \
   --security-group-ids sg-198b6e12 \
   --iam-instance-profile Name=EC2-NeuralStyle-Profile \
-  --block-device-mappings '[{"DeviceName":"/dev/sda1","Ebs":{"VolumeSize":100,"VolumeType":"gp3"}}]' \
+  --block-device-mappings '[{"DeviceName":"/dev/sda1","Ebs":{"VolumeSize":200,"VolumeType":"gp3"}}]' \
   --user-data file:///tmp/train_STYLE.sh \
   --tag-specifications 'ResourceType=instance,Tags=[{Key=Name,Value=train-STYLE}]'
 ```

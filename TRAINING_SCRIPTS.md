@@ -96,7 +96,7 @@ aws ec2 run-instances \
   --key-name memgenie_deploy \
   --security-group-ids sg-198b6e12 \
   --iam-instance-profile Name=EC2-NeuralStyle-Profile \
-  --block-device-mappings '[{"DeviceName":"/dev/sda1","Ebs":{"VolumeSize":100,"VolumeType":"gp3"}}]' \
+  --block-device-mappings '[{"DeviceName":"/dev/sda1","Ebs":{"VolumeSize":200,"VolumeType":"gp3"}}]' \
   --user-data file://ec2_setup.sh \
   --tag-specifications 'ResourceType=instance,Tags=[{Key=Name,Value=neural-training}]' \
   --query 'Instances[0].[InstanceId,PublicIpAddress]' \
