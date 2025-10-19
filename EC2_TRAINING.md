@@ -44,7 +44,7 @@ Location: `/Users/nikolay/src/untamed/ec2_training_test.sh` (also on GitHub)
 - **Security Group**: sg-198b6e12
 - **IAM Role**: EC2-NeuralStyle-Profile (S3 full access)
 - **vCPU Limit**: 8 total (can run 2 g4dn.xlarge simultaneously)
-- **Storage**: 80GB gp3
+- **Storage**: 100GB gp3 (REQUIRED - pip cache ~3GB, dataset ~17GB, PyTorch ~8GB)
 
 ## Active Training (2025-10-18)
 
@@ -94,6 +94,7 @@ aws ec2 run-instances \
   --key-name memgenie_deploy \
   --security-group-ids sg-198b6e12 \
   --iam-instance-profile Name=EC2-NeuralStyle-Profile \
+  --block-device-mappings '[{"DeviceName":"/dev/sda1","Ebs":{"VolumeSize":100,"VolumeType":"gp3"}}]' \
   --user-data file:///tmp/train_STYLE.sh \
   --tag-specifications 'ResourceType=instance,Tags=[{Key=Name,Value=train-STYLE}]'
 ```
