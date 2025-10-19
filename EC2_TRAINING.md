@@ -16,12 +16,12 @@ models/                 # Trained models organized by config
 checkpoints/            # Training checkpoints for resuming
 ```
 
-### Training Script: `ec2_training_test.sh`
-Location: `/Users/nikolay/src/untamed/ec2_training_test.sh` (also on GitHub)
+### Training Script: `setup_and_train.sh`
+Location: `/Users/nikolay/src/untamed/setup_and_train.sh` (on GitHub main branch)
 
 **Usage:**
 ```bash
-./ec2_training_test.sh STYLE_URL STYLE_NAME NUM_IMAGES STYLE_WEIGHT S3_BUCKET [CHECKPOINT]
+./setup_and_train.sh STYLE_URL STYLE_NAME NUM_IMAGES STYLE_WEIGHT S3_BUCKET [CHECKPOINT]
 ```
 
 **Parameters:**
@@ -33,9 +33,12 @@ Location: `/Users/nikolay/src/untamed/ec2_training_test.sh` (also on GitHub)
 
 **Features:**
 - Idempotent (can resume if interrupted)
+- **Maintains separate dataset folders** - no wasteful recreation when switching sizes
+  - `data/train_15k/` for 15k image training
+  - `data/train_40k/` for 40k image training
 - Downloads style images from `s3://BUCKET/style-images/`
 - Uploads models to `s3://BUCKET/models/{style-config}/`
-- Uses correct Ubuntu AMI: `ami-0c398cb65a93047f2`
+- Automatically uploads to S3 when training completes
 
 ### EC2 Configuration
 - **Instance Type**: g4dn.xlarge (NVIDIA T4 GPU, 4 vCPUs)
