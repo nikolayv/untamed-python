@@ -54,18 +54,13 @@ print(f'Updated mapping: {style_name} -> {model_name}')
     fi
 }
 
-# Style images to train on - Animal patterns (fur/plumage closeups and whole animals)
+# Style images to train on - Artist works from Downloads/animal art
+# Training 3 models: Bruno Liljefors, Dahlov Ipcar, Maurice Pillard Verneuil
+# Using most recent image from each artist's folder
 STYLES=(
-    "images/style-images/zebra_fur.jpg"
-    "images/style-images/zebra_nature.jpg"
-    "images/style-images/tiger_fur.png"
-    "images/style-images/tiger_whole.jpg"
-    "images/style-images/mandarin_duck_plumage_1.png"
-    "images/style-images/mandarin_duck_nature.jpg"
-    "images/style-images/fawn_fur.jpg"
-    "images/style-images/fawn_in_nature_1.jpeg"
-    "images/style-images/gray_wolf_fur.jpg"
-    "images/style-images/gray_wolf_whole.jpg"
+    "images/style-images/Bruno_Liljefors - Birds - Winter.png"
+    "images/style-images/Ipcar - Valley of Tishnar.png"
+    "images/style-images/Verneuil - Mullet Fish Image.jpg"
 )
 
 # Function to check if a model for this style already exists

@@ -77,6 +77,12 @@ BASE_MODELS = {
     '6': ('epoch_2_2025-10-17_16-54-38_100000.0_10000000000.0.model', 'Zebra Nature', 'examples/fast_neural_style/images/style-images/zebra_nature.jpg'),
     '7': ('epoch_2_2025-10-17_17-59-15_100000.0_10000000000.0.model', 'Tiger Fur', 'examples/fast_neural_style/images/style-images/tiger_fur.png'),
     '8': ('epoch_2_2025-10-17_19-07-11_100000.0_10000000000.0.model', 'Tiger Nature', 'examples/fast_neural_style/images/style-images/tiger_whole.jpg'),
+    '9': ('epoch_2_2025-10-18_05-43-21_100000.0_50000000000.0_15000imgs_5e10sw.model', 'Zebra Nature 5x', 'examples/fast_neural_style/images/style-images/zebra_nature.jpg'),
+
+    # Artist models (Bruno Liljefors, Dahlov Ipcar, Maurice Pillard Verneuil)
+    'a': ('epoch_2_2025-10-18_15-00-31_100000.0_10000000000.0.model', 'Liljefors Birds', 'examples/fast_neural_style/images/style-images/Bruno_Liljefors - Birds - Winter.png'),
+    'b': ('epoch_2_2025-10-18_16-05-02_100000.0_10000000000.0.model', 'Ipcar Valley', 'examples/fast_neural_style/images/style-images/Ipcar - Valley of Tishnar.png'),
+    'c': ('epoch_2_2025-10-18_17-08-42_100000.0_10000000000.0.model', 'Verneuil Fish', 'examples/fast_neural_style/images/style-images/Verneuil - Mullet Fish Image.jpg'),
 }
 
 # Load style preview images
@@ -492,10 +498,11 @@ print(f"Ready! Resolution: {int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))}x{int(cap.get
 print(f"Frame shape: {test_frame.shape}")
 print("\n=== CONTROLS ===")
 print("Single Mode (default):")
-print("  1-4: Stock models (fast) | 5-8: Custom animal patterns (slower)")
+print("  1-4: Stock models (fast) | 5-9: Custom animal patterns")
+print("  a-c: Artist models (Liljefors, Ipcar, Verneuil)")
 print("\nSplit Screen Mode (press 'm'):")
-print("  a: Select LEFT model (then 1-8)")
-print("  s: Select RIGHT model (then 1-8)")
+print("  a: Select LEFT model (then 1-9, b-c)")
+print("  s: Select RIGHT model (then 1-9, a-c)")
 print("  m: Toggle back to single mode")
 print("\nPulse Distortion:")
 print("  p: Toggle pulse effect on/off")
@@ -740,10 +747,10 @@ while True:
         update_model()
     elif key == ord('a') and blend_mode == 1:
         selecting_left = True
-        print("Select LEFT model (press 1-8):")
+        print("Select LEFT model (press 1-9, b-c):")
     elif key == ord('s') and blend_mode == 1:
         selecting_right = True
-        print("Select RIGHT model (press 1-8):")
+        print("Select RIGHT model (press 1-9, a-c):")
     # Pulse distortion controls
     elif key == ord('p'):
         pulse_enabled = not pulse_enabled
