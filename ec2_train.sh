@@ -28,7 +28,7 @@ echo "Started: $(date)"
 echo ""
 
 # Navigate to training directory
-cd /home/ubuntu/neural_style_training/examples/fast_neural_style
+cd /home/ubuntu/neural_style_training/fast_neural_style
 
 # Determine dataset folder based on size
 NUM_IMGS_K=$(echo $NUM_IMAGES | awk '{printf "%.0fk", $1/1000}')

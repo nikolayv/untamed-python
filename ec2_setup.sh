@@ -13,7 +13,7 @@ echo "=========================================="
 # Install system packages
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
-apt-get install -y -qq python3-pip git wget unzip awscli screen
+apt-get install -y -qq python3-pip git wget unzip screen
 
 # Install PyTorch with CUDA
 echo "Installing PyTorch with CUDA support..."
@@ -72,7 +72,7 @@ fi
 # Cleanup full dataset zip
 rm -f train2014.zip
 
-cd /home/ubuntu/neural_style_training/examples/fast_neural_style
+cd /home/ubuntu/neural_style_training/fast_neural_style
 
 # Fix permissions for checkpoint directory
 mkdir -p models/checkpoints images/style-images

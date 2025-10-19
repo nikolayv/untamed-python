@@ -128,11 +128,11 @@ aws s3 sync s3://nav-untamed-style-transfer-models/models/ ./models/
 ## File Locations
 
 **On EC2:**
-- Training directory: `/home/ubuntu/neural_style_training/examples/fast_neural_style/`
-- Datasets: `/home/ubuntu/neural_style_training/examples/fast_neural_style/data/train_15k/` and `data/train_40k/`
-- Models: `/home/ubuntu/neural_style_training/examples/fast_neural_style/models/`
+- Training directory: `/home/ubuntu/neural_style_training/fast_neural_style/`
+- Datasets: `/home/ubuntu/neural_style_training/fast_neural_style/data/train_15k/` and `data/train_40k/`
+- Models: `/home/ubuntu/neural_style_training/fast_neural_style/models/`
 - Training log: `/tmp/training.log`
-- Setup log: `/var/log/setup.log`
+- Setup log: `/var/log/cloud-init-output.log`
 
 **On S3:**
 - Style images: `s3://BUCKET/style-images/`
