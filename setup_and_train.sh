@@ -50,22 +50,14 @@ if [ ! -d "examples" ]; then
 fi
 cd examples/fast_neural_style
 
-# Download COCO dataset (check size and recreate only if needed)
-DATASET_DIR="data/train_data"
+# Use separate dataset folders based on size to avoid recreation
+NUM_IMGS_K=$(echo $NUM_IMAGES | awk '{printf "%.0fk", $1/1000}')
+DATASET_DIR="data/train_${NUM_IMGS_K}"
+
 if [ -d "$DATASET_DIR" ]; then
-    EXISTING_COUNT=$(find $DATASET_DIR -type f -name "*.jpg" 2>/dev/null | wc -l)
-    echo "Found existing dataset with $EXISTING_COUNT images"
-
-    if [ "$EXISTING_COUNT" -eq "$NUM_IMAGES" ]; then
-        echo "Dataset size matches requirement ($NUM_IMAGES images), reusing"
-    else
-        echo "Dataset size mismatch (need $NUM_IMAGES), recreating..."
-        rm -rf "$DATASET_DIR"
-    fi
-fi
-
-if [ ! -d "$DATASET_DIR" ]; then
-    echo "Downloading COCO dataset..."
+    echo "Using existing dataset: $DATASET_DIR"
+else
+    echo "Dataset $DATASET_DIR not found, downloading COCO dataset..."
     mkdir -p data && cd data
     wget -q http://images.cocodataset.org/zips/train2014.zip
     echo "Extracting dataset..."
@@ -78,8 +70,8 @@ if [ ! -d "$DATASET_DIR" ]; then
     find . -maxdepth 1 -name "*.jpg" | head -n $NUM_IMAGES | xargs -I {} cp {} ../train_subset/images/
     cd ..
     rm -rf train_full train2014.zip
-    mv train_subset train_data
-    echo "Dataset ready: $(find train_data/images -name "*.jpg" | wc -l) images"
+    mv train_subset train_${NUM_IMGS_K}
+    echo "Dataset ready: $(find train_${NUM_IMGS_K}/images -name "*.jpg" | wc -l) images"
     cd ..
 fi
 
@@ -118,7 +110,7 @@ echo "=========================================="
 echo ""
 
 python3 neural_style/neural_style.py train \
-    --dataset data/train_data \
+    --dataset $DATASET_DIR \
     --style-image "images/style-images/$STYLE_IMAGE_NAME" \
     --style-size 512 \
     --save-model-dir models \
