@@ -27,7 +27,7 @@ if [ ! -d "neural_style_training" ]; then
     git clone -q https://github.com/pytorch/examples.git neural_style_training
 fi
 
-cd neural_style_training/examples/fast_neural_style
+cd neural_style_training/fast_neural_style
 
 # Fix Pillow compatibility (Image.ANTIALIAS deprecated)
 echo "Patching Pillow compatibility..."
