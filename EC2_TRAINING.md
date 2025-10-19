@@ -46,7 +46,7 @@ Location: `/Users/nikolay/src/untamed/setup_and_train.sh` (on GitHub main branch
 - **Key**: memgenie_deploy (~/.aws/memgenie_deploy.pem)
 - **Security Group**: sg-198b6e12
 - **IAM Role**: EC2-NeuralStyle-Profile (S3 full access)
-- **vCPU Limit**: 8 total (can run 2 g4dn.xlarge simultaneously)
+- **vCPU Limit**: 16 total (can run 4 g4dn.xlarge simultaneously)
 - **Storage**: 200GB gp3 (RECOMMENDED - AMI base: ~80GB, dataset: ~17GB, working space: ~20GB, buffer: ~80GB)
 
 ## Active Training (2025-10-18)
