@@ -1,5 +1,6 @@
 #!/bin/bash
-# EC2 Training Script with configurable parameters
+# EC2 Instance Setup and Training Script
+# Sets up PyTorch environment and trains neural style transfer models
 # Usage: ./script.sh STYLE_IMAGE_URL STYLE_NAME NUM_IMAGES STYLE_WEIGHT S3_BUCKET [CHECKPOINT]
 
 set -e
@@ -20,14 +21,22 @@ echo "Style Weight: $STYLE_WEIGHT"
 echo "Started: $(date)"
 echo ""
 
-# Update and install dependencies
+# Update and install system dependencies
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
 apt-get install -y -qq python3-pip git wget unzip > /dev/null 2>&1
 
-# Install PyTorch with CUDA (running as root, no --break-system-packages needed)
-pip3 install -q torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
-pip3 install -q Pillow numpy
+# Install PyTorch with CUDA (check if already installed first)
+if python3 -c "import torch" 2>/dev/null; then
+    echo "PyTorch already installed, skipping pip install"
+else
+    echo "Installing PyTorch with CUDA support..."
+    # Try without --break-system-packages first, fallback if needed
+    pip3 install -q torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118 2>/dev/null || \
+    pip3 install --break-system-packages -q torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+    pip3 install -q Pillow numpy 2>/dev/null || \
+    pip3 install --break-system-packages -q Pillow numpy
+fi
 
 # Setup working directory
 cd /home/ubuntu
@@ -41,8 +50,21 @@ if [ ! -d "examples" ]; then
 fi
 cd examples/fast_neural_style
 
-# Download COCO dataset (skip if exists and resuming)
-if [ ! -d "data/train_data" ]; then
+# Download COCO dataset (check size and recreate only if needed)
+DATASET_DIR="data/train_data"
+if [ -d "$DATASET_DIR" ]; then
+    EXISTING_COUNT=$(find $DATASET_DIR -type f -name "*.jpg" 2>/dev/null | wc -l)
+    echo "Found existing dataset with $EXISTING_COUNT images"
+
+    if [ "$EXISTING_COUNT" -eq "$NUM_IMAGES" ]; then
+        echo "Dataset size matches requirement ($NUM_IMAGES images), reusing"
+    else
+        echo "Dataset size mismatch (need $NUM_IMAGES), recreating..."
+        rm -rf "$DATASET_DIR"
+    fi
+fi
+
+if [ ! -d "$DATASET_DIR" ]; then
     echo "Downloading COCO dataset..."
     mkdir -p data && cd data
     wget -q http://images.cocodataset.org/zips/train2014.zip
@@ -59,8 +81,6 @@ if [ ! -d "data/train_data" ]; then
     mv train_subset train_data
     echo "Dataset ready: $(find train_data/images -name "*.jpg" | wc -l) images"
     cd ..
-else
-    echo "Dataset already exists, skipping download"
 fi
 
 # Fix Pillow compatibility (Image.ANTIALIAS deprecated)
