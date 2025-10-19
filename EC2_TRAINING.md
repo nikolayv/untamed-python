@@ -39,7 +39,7 @@ Location: `/Users/nikolay/src/untamed/ec2_training_test.sh` (also on GitHub)
 
 ### EC2 Configuration
 - **Instance Type**: g4dn.xlarge (NVIDIA T4 GPU, 4 vCPUs)
-- **AMI**: ami-0c398cb65a93047f2 (Ubuntu 22.04)
+- **AMI**: ami-0b5ea73381626fce3 (Ubuntu 22.04 with NVIDIA GPU drivers)
 - **Key**: memgenie_deploy (~/.aws/memgenie_deploy.pem)
 - **Security Group**: sg-198b6e12
 - **IAM Role**: EC2-NeuralStyle-Profile (S3 full access)
@@ -89,7 +89,7 @@ EOF
 
 # 2. Launch instance
 aws ec2 run-instances \
-  --image-id ami-0c398cb65a93047f2 \
+  --image-id ami-0b5ea73381626fce3 \
   --instance-type g4dn.xlarge \
   --key-name memgenie_deploy \
   --security-group-ids sg-198b6e12 \

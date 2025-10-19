@@ -24,7 +24,7 @@ echo ""
 # Update and install system dependencies
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
-apt-get install -y -qq python3-pip git wget unzip > /dev/null 2>&1
+apt-get install -y -qq python3-pip git wget unzip awscli > /dev/null 2>&1
 
 # Install PyTorch with CUDA (check if already installed first)
 if python3 -c "import torch" 2>/dev/null; then
