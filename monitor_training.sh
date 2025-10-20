@@ -63,7 +63,8 @@ echo ""
 echo "=========================================="
 echo "Starting Training on EC2"
 echo "=========================================="
-$SSH_CMD "nohup /tmp/ec2_train.sh '$STYLE_NAME' '$NUM_IMAGES' '$STYLE_WEIGHT' '$S3_BUCKET' > /tmp/training.log 2>&1 & echo 'Training started'"
+TRAIN_LOG="training_$(echo $STYLE_NAME | sed 's/\.[^.]*$//')_$(date +%s).log"
+$SSH_CMD "nohup /tmp/ec2_train.sh '$STYLE_NAME' '$NUM_IMAGES' '$STYLE_WEIGHT' '$S3_BUCKET' > ~/$TRAIN_LOG 2>&1 & echo 'Training started - log: ~/$TRAIN_LOG'"
 
 echo "Waiting 10 seconds for training to initialize..."
 sleep 10
@@ -73,6 +74,7 @@ echo ""
 echo "=========================================="
 echo "Monitoring Training Progress"
 echo "=========================================="
+echo "Remote log file: ~/$TRAIN_LOG"
 echo ""
 
 INTERVALS=(10 10 15 15 20 20 30 30 60 60 120 120 180 180 300 300 300 300 300 300)
@@ -81,8 +83,8 @@ CHECK_NUM=0
 for INTERVAL in "${INTERVALS[@]}"; do
     CHECK_NUM=$((CHECK_NUM + 1))
 
-    # Get training status
-    TRAINING_LOG=$($SSH_CMD "tail -50 /tmp/training.log 2>/dev/null" 2>/dev/null)
+    # Get training status - check both possible log locations
+    TRAINING_LOG=$($SSH_CMD "tail -50 ~/$TRAIN_LOG 2>/dev/null || tail -50 /tmp/training.log 2>/dev/null" 2>/dev/null)
 
     # Check if complete
     if echo "$TRAINING_LOG" | grep -q "All done!"; then
