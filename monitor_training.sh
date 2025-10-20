@@ -63,7 +63,7 @@ echo ""
 echo "=========================================="
 echo "Starting Training on EC2"
 echo "=========================================="
-$SSH_CMD "nohup /tmp/ec2_train.sh $STYLE_NAME $NUM_IMAGES $STYLE_WEIGHT $S3_BUCKET > /tmp/training.log 2>&1 & echo 'Training started'"
+$SSH_CMD "nohup /tmp/ec2_train.sh '$STYLE_NAME' '$NUM_IMAGES' '$STYLE_WEIGHT' '$S3_BUCKET' > /tmp/training.log 2>&1 & echo 'Training started'"
 
 echo "Waiting 10 seconds for training to initialize..."
 sleep 10
